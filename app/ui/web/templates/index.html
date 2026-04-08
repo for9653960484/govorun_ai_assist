@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="chat-page">
+    <h1>AI Секретарь</h1>
+    <p class="subtitle">Веб-чат с поддержкой текста и файла.</p>
+
+    <form id="chat-form" class="chat-form">
+      <label>
+        ID пользователя
+        <input id="user-id" name="user_id" type="text" placeholder="например: web_user_1" required>
+      </label>
+
+      <label>
+        Сообщение
+        <textarea id="text" name="text" rows="4" placeholder="Напишите сообщение..."></textarea>
+      </label>
+
+      <label>
+        Файл (опционально)
+        <input id="file" name="file" type="file">
+      </label>
+
+      <button id="send-btn" type="submit">Отправить</button>
+    </form>
+
+    <section id="chat-log" class="chat-log" aria-live="polite"></section>
+  </main>
+
+  <script>
+    const form = document.getElementById("chat-form");
+    const chatLog = document.getElementById("chat-log");
+    const sendBtn = document.getElementById("send-btn");
+
+    function addMessage(role, text) {
+      const item = document.createElement("article");
+      item.className = `msg msg-${role}`;
+      const roleTitle = role === "user" ? "Вы" : "Агент";
+      item.innerHTML = `<h3>${roleTitle}</h3><pre></pre>`;
+      item.querySelector("pre").textContent = text;
+      chatLog.appendChild(item);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const userId = document.getElementById("user-id").value.trim();
+      const text = document.getElementById("text").value.trim();
+      const fileInput = document.getElementById("file");
+
+      if (!userId) {
+        alert("Укажите ID пользователя.");
+        return;
+      }
+      if (!text && !fileInput.files.length) {
+        alert("Введите сообщение или выберите файл.");
+        return;
+      }
+
+      if (text) addMessage("user", text);
+      sendBtn.disabled = true;
+      sendBtn.textContent = "Отправка...";
+
+      try {
+        const data = new FormData();
+        data.append("user_id", userId);
+        data.append("text", text);
+        if (fileInput.files[0]) {
+          data.append("file", fileInput.files[0]);
+        }
+
+        const response = await fetch("/chat", {
+          method: "POST",
+          body: data
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.detail || "Ошибка запроса.");
+        }
+        addMessage("assistant", payload.response || "(пустой ответ)");
+        document.getElementById("text").value = "";
+      } catch (error) {
+        addMessage("assistant", `Ошибка: ${error.message}`);
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = "Отправить";
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+body {
+  font-family: "Segoe UI", sans-serif;
+  margin: 0;
+  background: #f4f4f6;
+  color: #1a1a1a;
+}
+
+.chat-page {
+  max-width: 900px;
+  margin: 2rem auto;
+  background: #fff;
+  border-radius: 14px;
+  padding: 1.2rem;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+}
+
+h1 {
+  margin: 0 0 0.4rem 0;
+}
+
+.subtitle {
+  margin: 0 0 1rem 0;
+  color: #4b5563;
+}
+
+.chat-form {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.chat-form label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+}
+
+input[type="text"],
+textarea,
+input[type="file"] {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  font: inherit;
+}
+
+button {
+  justify-self: start;
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  padding: 0.55rem 1rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.chat-log {
+  margin-top: 1rem;
+  max-height: 420px;
+  overflow: auto;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 0.9rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.msg {
+  border-radius: 10px;
+  padding: 0.7rem 0.8rem;
+}
+
+.msg h3 {
+  margin: 0 0 0.4rem 0;
+  font-size: 0.9rem;
+}
+
+.msg pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+}
+
+.msg-user {
+  background: #eef2ff;
+}
+
+.msg-assistant {
+  background: #f3f4f6;
+}
