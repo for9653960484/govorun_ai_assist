@@ -1,35 +1,38 @@
-# AI !5:@5B0@L 8 A>25B=8:
+# AI-секретарь и советник
 
-!B0@B>2K9 :0@:0A <0AHB018@C5<>3> AI-035=B0 =0 Python 3.11+.
+Стартовый каркас масштабируемого AI-агента на Python 3.11+.
 
-## 'B> @50;87>20=>
-- >4C;L=0O 0@E8B5:BC@0 A @0745;5=85< O4@0, ?0<OB8, 4>:C<5=B>2, 8=AB@C<5=B>2 8 UI.
-- 20 :0=0;0 UI: Telegram 8 Web (FastAPI).
-- 1I89 @>CB5@ AF5=0@852: G0B, 2>?@>AK ?> 4>:C<5=BC, B>;L:> 703@C7:0 D09;0, 2K7>2 8=AB@C<5=B0, ?5@5:;NG5=85 ?> B53C.
-- >@>B:0O ?0<OBL 2 RAM: dict ?> `user_id`, E@0=5=85 ?>A;54=8E 5 A>>1I5=89.
-- >;30O ?0<OBL 2 SQLite: B5<K, B538, 70<5B:8, A>E@0=5==K5 @57C;LB0BK ?>8A:0.
-- 0;5=40@L 2 SQLite: $, 45=L/<5AOF/3>4 @>645=8O, ?>8A: ?> $, 2K1>@:0 ?> <5AOFC.
--  55AB@ 8=AB@C<5=B>2 8 703;CH:8: `weather_stub`, `stocks_stub`, `crypto_stub`, `travel_expenses_stub`.
-- >102;5= 8=AB@C<5=B 35=5@0F88 87>1@065=89 `image_gen` (OpenAI Images API, <>45;L ?> C<>;G0=8N `gpt-image-1`).
-- =B53@0F8O OpenAI G5@57 Responses API A :>=D83>< <>45;8/:;NG0 87 env.
+## Что реализовано
 
-## 'B> ?>:0 703;CH:8
-- =AB@C<5=BK `weather_stub`, `stocks_stub`, `crypto_stub`, `travel_expenses_stub` A>45@60B TODO 4;O @50;L=KE API.
-- >4C;8 `app/tools/search/service.py` 8 `app/tools/memory_tools/service.py` >AB02;5=K :0: @0AH8@O5<K5 703>B>2:8.
-- Telegram->1@01>BG8: 703@C7:8 D09;>2 B@51C5B 4>@01>B:8 A:0G820=8O D09;0 ?> `file_id`.
+- Модульная архитектура с разделением ядра, памяти, документов, инструментов и UI.
+- Два канала UI: Telegram и Web (FastAPI).
+- Общий роутер сценариев: чат, вопросы по документам, загрузка файла, вызов инструмента, переключение по тегу.
+- Короткая память в RAM: хранение последних сообщений по `user_id`.
+- Долгая память в SQLite: темы, теги, заметки, сохраненные результаты поиска.
+- Календарь в SQLite: ФИО, день/месяц/год рождения, поиск по ФИО, выборка по месяцу.
+- Реестр инструментов и заглушки: `weather_stub`, `stocks_stub`, `crypto_stub`, `travel_expenses_stub`.
+- Добавлен инструмент генерации изображений `image_gen` (OpenAI Images API, модель по умолчанию `gpt-image-1`).
+- Интеграция OpenAI через Responses API с конфигурацией модели/ключа из `.env`.
 
-## 5@5<5==K5 >:@C65=8O (.env)
-- `OPENAI_API_KEY`  :;NG OpenAI.
-- `OPENAI_MODEL`  ?> C<>;G0=8N `gpt-5-mini-2025-08-07`.
-- `OPENAI_IMAGE_MODEL`  ?> C<>;G0=8N `gpt-image-1` (4;O 8=AB@C<5=B0 `image_gen`).
-- `OPENAI_BASE_URL`  >?F8>=0;L=>, 5A;8 =C65= :0AB><=K9 endpoint.
-- `TELEGRAM_BOT_TOKEN`  >?F8>=0;L=>, 4;O Telegram-:0=0;0.
-- `WEB_HOST`  ?> C<>;G0=8N `127.0.0.1`.
-- `WEB_PORT`  ?> C<>;G0=8N `8000`.
+## Что пока заглушки
 
-@8;>65=85 02B><0B8G5A:8 703@C605B D09; `project/.env` G5@57 `python-dotenv`.
+- Инструменты `weather_stub`, `stocks_stub`, `crypto_stub`, `travel_expenses_stub` содержат TODO для реальных API.
+- Модули `app/tools/search/service.py` и `app/tools/memory_tools/service.py` оставлены как расширяемые заготовки.
+- Telegram-обработчик загрузки файлов требует доработки скачивания файла по `file_id`.
 
-@8<5@ `project/.env`:
+## Переменные окружения (`.env`)
+
+- `OPENAI_API_KEY` - ключ OpenAI.
+- `OPENAI_MODEL` - по умолчанию `gpt-5-mini-2025-08-07`.
+- `OPENAI_IMAGE_MODEL` - по умолчанию `gpt-image-1` (для инструмента `image_gen`).
+- `OPENAI_BASE_URL` - опционально, если нужен кастомный endpoint.
+- `TELEGRAM_BOT_TOKEN` - опционально, для Telegram-канала.
+- `WEB_HOST` - по умолчанию `127.0.0.1`.
+- `WEB_PORT` - по умолчанию `8000`.
+
+Приложение автоматически загружает `project/.env` через `python-dotenv`.
+
+Пример `project/.env`:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key
@@ -40,25 +43,28 @@ WEB_PORT=8000
 # TELEGRAM_BOT_TOKEN=your_telegram_token
 ```
 
-## 0?CA:
-1. !>740BL 28@BC0;L=>5 >:@C65=85 8 CAB0=>28BL 7028A8<>AB8:
+## Запуск
+
+1. Создать виртуальное окружение и установить зависимости:
    - `py -m venv .venv`
    - Windows: `.venv\Scripts\activate`
    - Linux: `source .venv/bin/activate`
    - `pip install -r requirements.txt`
-2. !>740BL 8 =0AB@>8BL D09; `.env` 2 :>@=5 `project/`.
-3. 0?CAB8BL:
+2. Создать и настроить файл `.env` в корне `project/`.
+3. Запустить:
    - `py -m app.main`
 4. Web UI: [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
-## @8<5@ 70?@>A0 =0 35=5@0F8N 87>1@065=8O
-@8<5@ D@07K, :>B>@CN <>6=> >B?@028BL 035=BC 2 Telegram 8;8 Web UI:
+## Пример запроса на генерацию изображения
+
+Пример фразы, которую можно отправить агенту в Telegram или Web UI:
 
 ```text
-!35=5@8@C9 87>1@065=85: <8=8<0;8AB8G=K9 ?>AB5@ A =5>=>2K< 3>@>4>< =>GLN, D>@<0B 1024x1024.
+Сгенерируй изображение: минималистичный постер с неоновым городом ночью, формат 1024x1024.
 ```
 
-35=B ?@8 =5>1E>48<>AB8 2K7>25B 8=AB@C<5=B `image_gen` 8 25@=5B AAK;:C =0 @57C;LB0B.
+Агент при необходимости вызовет инструмент `image_gen` и вернет ссылку на результат.
 
-## !B@C:BC@0
-!<. :0B0;>38 `app/` (;>38:0) 8 `data/` (40==K5). 87=5A-;>38:0 =5 4C1;8@C5BAO 2 UI-A;>OE.
+## Структура
+
+См. каталоги `app/` (логика) и `data/` (данные). Бизнес-логика не дублируется в UI-слое.
