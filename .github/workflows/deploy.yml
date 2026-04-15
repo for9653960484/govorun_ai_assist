@@ -1,0 +1,51 @@
+name: Deploy to production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH key
+        run: |
+          PORT="${{ secrets.SERVER_PORT }}"
+          if [ -z "$PORT" ]; then PORT=22; fi
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p "$PORT" -H "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy on server
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          APP_DIR: ${{ secrets.APP_DIR }}
+          APP_ENV_FILE: ${{ secrets.APP_ENV_FILE }}
+          REPO_URL: https://github.com/for9653960484/govorun_ai_assist.git
+          BRANCH: main
+        run: |
+          PORT="$SERVER_PORT"
+          if [ -z "$PORT" ]; then PORT=22; fi
+          if [ -z "$APP_ENV_FILE" ]; then
+            echo "APP_ENV_FILE secret is empty"
+            exit 1
+          fi
+
+          ssh -p "$PORT" "$SERVER_USER@$SERVER_HOST" "mkdir -p '$APP_DIR'"
+          ssh -p "$PORT" "$SERVER_USER@$SERVER_HOST" "if [ ! -d '$APP_DIR/.git' ]; then git clone '$REPO_URL' '$APP_DIR'; fi"
+          ssh -p "$PORT" "$SERVER_USER@$SERVER_HOST" "cd '$APP_DIR' && git fetch origin '$BRANCH' && git checkout '$BRANCH' && git reset --hard 'origin/$BRANCH'"
+
+          printf "%s\n" "$APP_ENV_FILE" | ssh -p "$PORT" "$SERVER_USER@$SERVER_HOST" "cat > '$APP_DIR/.env'"
+
+          ssh -p "$PORT" "$SERVER_USER@$SERVER_HOST" "cd '$APP_DIR' && docker compose -f docker-compose.prod.yml up -d --build --remove-orphans"
+          ssh -p "$PORT" "$SERVER_USER@$SERVER_HOST" "docker image prune -f"

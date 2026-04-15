@@ -1,0 +1,13 @@
+services:
+  govorun:
+    container_name: govorun_app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data

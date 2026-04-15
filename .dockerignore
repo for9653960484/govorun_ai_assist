@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+data/documents
+data/db/*.sqlite3
+agent-transcripts
+mcps
+terminals

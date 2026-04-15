@@ -68,3 +68,64 @@ WEB_PORT=8000
 ## Структура
 
 См. каталоги `app/` (логика) и `data/` (данные). Бизнес-логика не дублируется в UI-слое.
+
+## Автодеплой через Docker (GitHub Actions -> VPS)
+
+В репозиторий добавлен workflow `.github/workflows/deploy.yml`.
+Он запускается при каждом пуше в `main` (и вручную через `workflow_dispatch`) и делает следующее:
+
+1. Подключается к серверу по SSH.
+2. Клонирует репозиторий (если его еще нет на сервере).
+3. Обновляет код до `origin/main`.
+4. Создает/обновляет `.env` на сервере из секрета GitHub.
+5. Выполняет `docker compose -f docker-compose.prod.yml up -d --build`.
+
+### 1) Подготовка сервера
+
+Подключитесь к серверу и установите Docker + Compose plugin:
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg git
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker $USER
+```
+
+После `usermod` переподключитесь по SSH.
+
+### 2) Секреты в GitHub
+
+В `Settings -> Secrets and variables -> Actions` добавьте:
+
+- `SERVER_HOST` - IP сервера (например `95.163.223.66`)
+- `SERVER_PORT` - обычно `22`
+- `SERVER_USER` - пользователь на сервере (например `root` или `ubuntu`)
+- `SERVER_SSH_KEY` - приватный SSH-ключ (который имеет доступ к серверу)
+- `APP_DIR` - путь проекта на сервере (например `/opt/govorun_ai_assist`)
+- `APP_ENV_FILE` - полный текст вашего `.env` (многострочный секрет)
+
+Пример значения `APP_ENV_FILE`:
+
+```env
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-5-mini-2025-08-07
+OPENAI_IMAGE_MODEL=gpt-image-1
+WEB_HOST=0.0.0.0
+WEB_PORT=8000
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+```
+
+### 3) Первый запуск
+
+Сделайте пуш в `main` или запустите workflow вручную во вкладке `Actions`.
+После успешного деплоя приложение будет доступно на:
+
+- `http://<SERVER_HOST>:8000`
