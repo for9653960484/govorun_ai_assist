@@ -74,14 +74,19 @@ WEB_PORT=8000
 
 ## Автодеплой через Docker (GitHub Actions -> VPS)
 
-В репозиторий добавлен workflow `.github/workflows/deploy.yml`.
-Он запускается при каждом пуше в `main` (и вручную через `workflow_dispatch`) и делает следующее:
+В репозиторий добавлены два workflow:
+
+- `.github/workflows/build-image.yml` - собирает Docker-образ и публикует его в GHCR (`ghcr.io`).
+- `.github/workflows/deploy.yml` - после успешной сборки образа выполняет деплой на VPS.
+
+Схема работы:
 
 1. Подключается к серверу по SSH.
 2. Клонирует репозиторий (если его еще нет на сервере).
 3. Обновляет код до `origin/main`.
 4. Создает/обновляет `.env` на сервере из секрета GitHub.
-5. Выполняет `docker compose -f docker-compose.prod.yml up -d --build`.
+5. Выполняет вход в GHCR, затем `docker compose -f docker-compose.prod.yml pull`.
+6. Запускает `docker compose -f docker-compose.prod.yml up -d --remove-orphans`.
 
 ### 1) Подготовка сервера
 
@@ -114,6 +119,8 @@ sudo usermod -aG docker $USER
 - `SERVER_SSH_KEY` - приватный SSH-ключ (который имеет доступ к серверу)
 - `APP_DIR` - путь проекта на сервере (например `/opt/govorun_ai_assist`)
 - `APP_ENV_FILE` - полный текст вашего `.env` (многострочный секрет)
+- `GHCR_USER` - GitHub-логин, у которого есть доступ к пакетам
+- `GHCR_TOKEN` - Personal Access Token с правом `read:packages`
 
 Пример значения `APP_ENV_FILE`:
 
@@ -129,6 +136,11 @@ TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 ### 3) Первый запуск
 
 Сделайте пуш в `main` или запустите workflow вручную во вкладке `Actions`.
+Рекомендуемый порядок:
+
+1. `Build and push Docker image`
+2. `Deploy to production` (автоматически после успешной сборки, либо вручную)
+
 После успешного деплоя приложение будет доступно на:
 
 - `http://<SERVER_HOST>:8000`

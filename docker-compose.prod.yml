@@ -1,9 +1,7 @@
 services:
   govorun:
     container_name: govorun_app
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/for9653960484/govorun_ai_assist:latest
     restart: unless-stopped
     env_file:
       - .env
