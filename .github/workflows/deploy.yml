@@ -56,7 +56,7 @@ jobs:
             exit 1
           fi
 
-          APP_ENV_B64="$(printf "%s" "$APP_ENV_FILE" | base64 -w 0)"
+          APP_ENV_B64="$(printf "%s\n" "$APP_ENV_FILE" | base64 -w 0)"
           SSH_OPTS="-i ~/.ssh/id_rsa -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectionAttempts=3"
 
           ssh $SSH_OPTS -p "$PORT" "$SERVER_USER@$SERVER_HOST" "APP_DIR='$APP_DIR' REPO_URL='$REPO_URL' BRANCH='$BRANCH' GHCR_USER='$GHCR_USER' GHCR_TOKEN='$GHCR_TOKEN' APP_ENV_B64='$APP_ENV_B64' bash -s" <<'REMOTE'
