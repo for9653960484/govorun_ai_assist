@@ -16,13 +16,15 @@
 
 ## Что пока заглушки
 
-- Инструменты `weather_stub`, `stocks_stub`, `crypto_stub`, `travel_expenses_stub` содержат TODO для реальных API.
+- Инструменты `stocks_stub`, `crypto_stub`, `travel_expenses_stub` содержат TODO для реальных API.
+- `weather_stub` подключен к OpenWeather API (ключ через `.env`).
 - Модули `app/tools/search/service.py` и `app/tools/memory_tools/service.py` оставлены как расширяемые заготовки.
 - Telegram-обработчик загрузки файлов требует доработки скачивания файла по `file_id`.
 
 ## Переменные окружения (`.env`)
 
 - `OPENAI_API_KEY` - ключ OpenAI.
+- `OPENWEATHER_API_KEY` - ключ OpenWeather (для `weather_stub`).
 - `OPENAI_MODEL` - по умолчанию `gpt-5-mini-2025-08-07`.
 - `OPENAI_IMAGE_MODEL` - по умолчанию `gpt-image-1` (для инструмента `image_gen`).
 - `OPENAI_BASE_URL` - опционально, если нужен кастомный endpoint.
@@ -36,6 +38,7 @@
 
 ```env
 OPENAI_API_KEY=your_openai_api_key
+OPENWEATHER_API_KEY=your_openweather_api_key
 OPENAI_MODEL=gpt-5-mini-2025-08-07
 OPENAI_IMAGE_MODEL=gpt-image-1
 WEB_HOST=127.0.0.1
