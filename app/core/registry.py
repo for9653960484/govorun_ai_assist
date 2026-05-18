@@ -20,6 +20,9 @@ class ToolRegistry:
     def list_names(self) -> list[str]:
         return sorted(self._tools.keys())
 
+    def all_tools(self) -> list[BaseTool]:
+        return list(self._tools.values())
+
     def schemas(self) -> list[dict[str, Any]]:
         return [tool.schema() for tool in self._tools.values()]
 

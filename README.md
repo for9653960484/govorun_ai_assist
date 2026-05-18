@@ -12,7 +12,7 @@
 - Календарь в SQLite: ФИО, день/месяц/год рождения, поиск по ФИО, выборка по месяцу.
 - Реестр инструментов и заглушки: `weather_stub`, `stocks_stub`, `crypto_stub`, `travel_expenses_stub`.
 - Добавлен инструмент генерации изображений `image_gen` (OpenAI Images API, модель по умолчанию `gpt-image-1`).
-- Интеграция OpenAI через Responses API с конфигурацией модели/ключа из `.env`.
+- Интеграция LLM через [LangChain](https://docs.langchain.com/oss/python/langchain/quickstart): `create_agent`, инструменты из реестра, память по `thread_id` (LangGraph `InMemorySaver`).
 
 ## Что пока заглушки
 
@@ -28,6 +28,8 @@
 - `OPENAI_MODEL` - по умолчанию `gpt-5-mini-2025-08-07`.
 - `OPENAI_IMAGE_MODEL` - по умолчанию `gpt-image-1` (для инструмента `image_gen`).
 - `OPENAI_BASE_URL` - опционально, если нужен кастомный endpoint.
+- `LANGCHAIN_TEMPERATURE` - температура модели для LangChain-агента (по умолчанию `0.3`).
+- `LANGSMITH_TRACING` / `LANGSMITH_API_KEY` - опционально, трассировка агента в [LangSmith](https://smith.langchain.com).
 - `TELEGRAM_BOT_TOKEN` - опционально, для Telegram-канала.
 - `WEB_HOST` - по умолчанию `127.0.0.1`.
 - `WEB_PORT` - по умолчанию `8000`.

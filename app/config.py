@@ -24,6 +24,10 @@ class Settings:
     openai_image_model: str = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1")
     openai_base_url: str | None = os.getenv("OPENAI_BASE_URL") or None
 
+    langchain_temperature: float = float(os.getenv("LANGCHAIN_TEMPERATURE", "0.3"))
+    langsmith_tracing: bool = os.getenv("LANGSMITH_TRACING", "").lower() in {"1", "true", "yes"}
+    langsmith_api_key: str = os.getenv("LANGSMITH_API_KEY", "")
+
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     web_host: str = os.getenv("WEB_HOST", "127.0.0.1")
     web_port: int = int(os.getenv("WEB_PORT", "8000"))
