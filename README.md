@@ -34,9 +34,9 @@
 - `WEB_HOST` - по умолчанию `127.0.0.1`.
 - `WEB_PORT` - по умолчанию `8000`.
 
-Приложение автоматически загружает `project/.env` через `python-dotenv`.
+Приложение автоматически загружает `.env` из корня репозитория через `python-dotenv`.
 
-Пример `project/.env`:
+Пример `.env`:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key
@@ -50,14 +50,45 @@ WEB_PORT=8000
 
 ## Запуск
 
-1. Создать виртуальное окружение и установить зависимости:
-   - `py -m venv .venv`
-   - Windows: `.venv\Scripts\activate`
-   - Linux: `source .venv/bin/activate`
-   - `pip install -r requirements.txt`
-2. Создать и настроить файл `.env` в корне `project/`.
-3. Запустить:
-   - `py -m app.main`
+Нужен Python 3.11 или 3.12. На Windows по умолчанию может стоять 3.14: LangChain на нём стартует, но пишет предупреждение о несовместимости Pydantic V1. Для окружения лучше явно выбрать 3.12: `py -3.12 -m venv .venv`.
+
+Команды ниже выполняются из корня репозитория. В PowerShell их нужно вводить без обратных кавычек из этого файла.
+
+1. Создать виртуальное окружение и установить зависимости.
+
+   Windows (PowerShell):
+
+   ```powershell
+   py -3.12 -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+   ```
+
+   Linux:
+
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   python -m pip install -r requirements.txt
+   ```
+
+   На Windows ставьте пакеты через `python.exe -m pip`, а не через `pip` или `pip.exe`. Лаунчер `pip.exe` записывает абсолютный путь к интерпретатору и перестает находить его, если в пути есть кириллица или каталог проекта перенесли. После переноса папки окружение нужно создать заново.
+
+2. Положить файл `.env` в корень репозитория и заполнить его по примеру выше.
+3. Запустить интерпретатором из окружения, а не системным `py` (`py` не видит активированное `.venv`):
+
+   Windows:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m app.main
+   ```
+
+   Linux:
+
+   ```bash
+   python -m app.main
+   ```
+
 4. Web UI: [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
 ## Пример запроса на генерацию изображения
