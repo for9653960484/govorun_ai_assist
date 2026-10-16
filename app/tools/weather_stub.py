@@ -219,6 +219,8 @@ def _localize_api_message(message: str, status_code: int) -> str:
 class WeatherStubTool(BaseTool):
     name = "weather_stub"
     description = "Погода по городу или координатам через OpenWeather."
+    menu_title = "Погода"
+    menu_hint = "Погода в городе: сейчас, по желанию прогноз и воздух."
 
     def schema(self) -> dict[str, Any]:
         return {
@@ -300,4 +302,3 @@ class WeatherStubTool(BaseTool):
                 parts.append(f"Качество воздуха недоступно: {air_err}")
 
         return ToolResult(ok=True, message="\n\n".join(parts), data=raw_data)
-

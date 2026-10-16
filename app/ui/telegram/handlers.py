@@ -9,7 +9,7 @@ from aiogram.types import Message
 from app.config import settings
 from app.core.agent import Agent
 from app.core.types import IncomingMessage
-from app.ui.telegram.keyboards import main_keyboard
+from app.ui.telegram.keyboards import main_keyboard, topics_keyboard
 
 router = Router()
 TELEGRAM_MESSAGE_LIMIT = 4096
@@ -50,8 +50,60 @@ def setup_handlers(agent: Agent) -> Router:
         # For documents Telegram puts user text into caption, not text.
         text = (message.text or message.caption or "").strip()
 
+        user_id = str(message.from_user.id) if message.from_user else ""
+
         if text == "Показать темы":
-            await _answer_safe(message, agent.topics_text())
+            agent.disarm_quotes(user_id)
+            titles = [title for title, _hint in agent.registry.menu_entries()]
+            await _answer_safe(message, agent.topics_text(), reply_markup=topics_keyboard(titles))
+            return
+
+        if text == "Назад":
+            agent.disarm_quotes(user_id)
+            agent.travel_service.cancel(user_id)
+            await _answer_safe(message, "Главное меню.", reply_markup=main_keyboard())
+            return
+
+        if text == agent.quotes_tool.menu_title:
+            await _answer_safe(message, agent.arm_quotes(user_id))
+            return
+
+        if text == agent.habits_tool.menu_title:
+            agent.disarm_quotes(user_id)
+            await _answer_safe(message, agent.habits_service.week_board(user_id))
+            return
+
+        if text == agent.travel_tool.menu_title:
+            agent.disarm_quotes(user_id)
+            await _answer_safe(message, agent.travel_service.menu_text(user_id))
+            return
+
+        hint = agent.menu_hint(text)
+        if hint:
+            agent.disarm_quotes(user_id)
+            await _answer_safe(message, hint)
+            return
+
+        travel_state, _travel_data = agent.travel_service.repo.get_state(user_id)
+        if travel_state:
+            await _answer_safe(message, agent.travel_service.answer(user_id, text) or "Ок.")
+            return
+
+        if user_id and agent.quotes_waiting(user_id) and re.fullmatch(r"[A-Za-z][A-Za-z0-9.\-]{0,14}", text):
+            result = await agent.quotes_tool.run(ticker=text)
+            await _answer_safe(message, result.message)
+            return
+
+        agent.disarm_quotes(user_id)
+
+        habit_answer = agent.habits_service.answer_request(user_id, text)
+        if habit_answer is not None:
+            await _answer_safe(message, habit_answer)
+            return
+
+        travel_answer = agent.travel_service.answer(user_id, text)
+        if travel_answer is not None:
+            await _answer_safe(message, travel_answer)
             return
 
         delete_match = re.fullmatch(r"удалить\s+#?([^\s#]+)", text, flags=re.IGNORECASE)

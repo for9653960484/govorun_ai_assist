@@ -23,6 +23,14 @@ class ToolRegistry:
     def all_tools(self) -> list[BaseTool]:
         return list(self._tools.values())
 
+    def menu_entries(self) -> list[tuple[str, str]]:
+        """Пункты меню в порядке регистрации: название и краткое пояснение."""
+        return [
+            (tool.menu_title, tool.menu_hint)
+            for tool in self._tools.values()
+            if tool.menu_title
+        ]
+
     def schemas(self) -> list[dict[str, Any]]:
         return [tool.schema() for tool in self._tools.values()]
 

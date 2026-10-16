@@ -76,7 +76,7 @@ class CalendarRepository:
                 SELECT id, last_name, first_name, middle_name, birth_day, birth_month, birth_year
                 FROM birthdays
                 WHERE birth_month = ?
-                ORDER BY birth_day
+                ORDER BY birth_day ASC, last_name, first_name
                 """,
                 (month,),
             )

@@ -19,6 +19,8 @@ class BaseTool(ABC):
 
     name: str
     description: str
+    menu_title: str = ""
+    menu_hint: str = ""
 
     @abstractmethod
     def schema(self) -> dict[str, Any]:
