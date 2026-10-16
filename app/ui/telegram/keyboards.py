@@ -11,6 +11,18 @@ def main_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
+def quotes_keyboard() -> ReplyKeyboardMarkup:
+    """Группы активов для поиска котировки."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Валюты"), KeyboardButton(text="Криптовалюты")],
+            [KeyboardButton(text="Акции"), KeyboardButton(text="Акции (RU)")],
+            [KeyboardButton(text="Назад")],
+        ],
+        resize_keyboard=True,
+    )
+
+
 def topics_keyboard(titles: list[str]) -> ReplyKeyboardMarkup:
     """Клавиатура тем: пункты инструментов в порядке регистрации."""
     rows: list[list[KeyboardButton]] = []

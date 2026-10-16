@@ -21,7 +21,7 @@ from app.tools.habits.repository import HabitsRepository
 from app.tools.habits.service import HabitsService
 from app.tools.habits.tool import HabitsTool
 from app.tools.image_gen_tool import ImageGenTool
-from app.tools.quotes_tool import QuotesTool
+from app.tools.quotes_tool import QuotesTool, prompt_for
 from app.tools.travel.repository import TravelRepository
 from app.tools.travel.service import TravelService
 from app.tools.travel.tool import TravelTool
@@ -40,7 +40,7 @@ class Agent:
         self.travel_service = TravelService(TravelRepository(settings.sqlite_path))
         self.travel_tool = TravelTool(self.travel_service)
         self.quotes_tool = QuotesTool()
-        self._quote_users: set[str] = set()
+        self._quote_assets: dict[str, str] = {}
         self._register_tools()
 
         self.doc_service = DocumentService()
@@ -74,14 +74,21 @@ class Agent:
         return "\n".join(lines)
 
     def arm_quotes(self, user_id: str) -> str:
-        self._quote_users.add(user_id)
-        return "Напишите тикер."
+        self._quote_assets[user_id] = ""
+        return "Котировки. Выберите группу: валюты, криптовалюты, акции или акции (RU)."
+
+    def select_quote_asset(self, user_id: str, asset: str) -> str:
+        self._quote_assets[user_id] = asset
+        return prompt_for(asset)
+
+    def quote_asset(self, user_id: str) -> str:
+        return self._quote_assets.get(user_id, "")
 
     def disarm_quotes(self, user_id: str) -> None:
-        self._quote_users.discard(user_id)
+        self._quote_assets.pop(user_id, None)
 
     def quotes_waiting(self, user_id: str) -> bool:
-        return user_id in self._quote_users
+        return user_id in self._quote_assets
 
     def menu_hint(self, title: str) -> str | None:
         for menu_title, hint in self.registry.menu_entries():
