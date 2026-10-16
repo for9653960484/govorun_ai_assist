@@ -16,10 +16,15 @@ from app.services.tag_service import TagService
 from app.services.user_service import UserService
 from app.tools.calendar.repository import CalendarRepository
 from app.tools.calendar.service import CalendarService
-from app.tools.crypto_stub import CryptoStubTool
+from app.tools.calendar.tool import CalendarTool
+from app.tools.habits.repository import HabitsRepository
+from app.tools.habits.service import HabitsService
+from app.tools.habits.tool import HabitsTool
 from app.tools.image_gen_tool import ImageGenTool
-from app.tools.stocks_stub import StocksStubTool
-from app.tools.travel_expenses_stub import TravelExpensesStubTool
+from app.tools.quotes_tool import QuotesTool
+from app.tools.travel.repository import TravelRepository
+from app.tools.travel.service import TravelService
+from app.tools.travel.tool import TravelTool
 from app.tools.weather_stub import WeatherStubTool
 
 
@@ -29,22 +34,29 @@ class Agent:
     def __init__(self) -> None:
         self.short_memory = ShortMemory(limit=5)
         self.registry = ToolRegistry()
+        self.calendar_service = CalendarService(CalendarRepository(settings.sqlite_path))
+        self.habits_service = HabitsService(HabitsRepository(settings.sqlite_path))
+        self.habits_tool = HabitsTool(self.habits_service)
+        self.travel_service = TravelService(TravelRepository(settings.sqlite_path))
+        self.travel_tool = TravelTool(self.travel_service)
+        self.quotes_tool = QuotesTool()
+        self._quote_users: set[str] = set()
         self._register_tools()
 
         self.doc_service = DocumentService()
         self.long_repo = LongMemoryRepository(settings.sqlite_path)
         self.tag_service = TagService(self.long_repo)
         self.user_service = UserService(UserRepository(settings.sqlite_path))
-        self.calendar_service = CalendarService(CalendarRepository(settings.sqlite_path))
         self.chat_service = ChatService(self.short_memory, self.registry)
 
         self.router = Router(known_tools=self.registry.list_names())
 
     def _register_tools(self) -> None:
         self.registry.register(WeatherStubTool())
-        self.registry.register(StocksStubTool())
-        self.registry.register(CryptoStubTool())
-        self.registry.register(TravelExpensesStubTool())
+        self.registry.register(self.quotes_tool)
+        self.registry.register(self.travel_tool)
+        self.registry.register(CalendarTool(self.calendar_service))
+        self.registry.register(self.habits_tool)
         self.registry.register(ImageGenTool())
 
     def topics_text(self) -> str:
@@ -56,7 +68,26 @@ class Agent:
             "- удалить #тег",
             "- переименовать #старый_тег #новый_тег",
         ]
+        entries = self.registry.menu_entries()
+        if entries:
+            lines += ["", "Инструменты:"] + [f"- {title}" for title, _hint in entries]
         return "\n".join(lines)
+
+    def arm_quotes(self, user_id: str) -> str:
+        self._quote_users.add(user_id)
+        return "Напишите тикер."
+
+    def disarm_quotes(self, user_id: str) -> None:
+        self._quote_users.discard(user_id)
+
+    def quotes_waiting(self, user_id: str) -> bool:
+        return user_id in self._quote_users
+
+    def menu_hint(self, title: str) -> str | None:
+        for menu_title, hint in self.registry.menu_entries():
+            if menu_title == title:
+                return hint
+        return None
 
     def rename_topic_tag(self, old_tag: str, new_tag: str) -> tuple[bool, str]:
         return self.tag_service.rename_topic_tag(old_tag, new_tag)
@@ -65,6 +96,8 @@ class Agent:
         return self.tag_service.delete_topic_by_tag(tag)
 
     async def handle(self, incoming: IncomingMessage) -> str:
+        self.habits_tool.bind(incoming.user_id)
+        self.travel_tool.bind(incoming.user_id)
         decision = self.router.route(incoming)
 
         if decision.route == RouteType.FILE_ONLY and incoming.file_path:
@@ -98,6 +131,17 @@ class Agent:
             context_chunks = self.doc_service.answer_with_doc(index_path, incoming.text)
             context = "\n\n".join([x["text"] for x in context_chunks])
             return await self.chat_service.ask(incoming.user_id, incoming.text, extra_context=context)
+
+        if incoming.text.strip():
+            habit_answer = self.habits_service.answer_request(incoming.user_id, incoming.text)
+            if habit_answer is not None:
+                return habit_answer
+            travel_answer = self.travel_service.answer(incoming.user_id, incoming.text)
+            if travel_answer is not None:
+                return travel_answer
+            month_list = self.calendar_service.answer_month_request(incoming.text)
+            if month_list is not None:
+                return month_list
 
         if decision.route == RouteType.TOOL:
             return await self.chat_service.ask(incoming.user_id, incoming.text)

@@ -9,3 +9,18 @@ def main_keyboard() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
     )
+
+
+def topics_keyboard(titles: list[str]) -> ReplyKeyboardMarkup:
+    """Клавиатура тем: пункты инструментов в порядке регистрации."""
+    rows: list[list[KeyboardButton]] = []
+    row: list[KeyboardButton] = []
+    for title in titles:
+        row.append(KeyboardButton(text=title))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([KeyboardButton(text="Назад")])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)

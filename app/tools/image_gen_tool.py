@@ -11,6 +11,8 @@ from app.tools.base import BaseTool, ToolResult
 class ImageGenTool(BaseTool):
     name = "image_gen"
     description = "Генерация изображения по текстовому описанию через OpenAI Images API"
+    menu_title = "Изображение"
+    menu_hint = "Картинка по текстовому описанию."
 
     def __init__(self) -> None:
         client_kwargs: dict[str, Any] = {"api_key": settings.openai_api_key}
