@@ -9,7 +9,8 @@ from aiogram.types import Message
 from app.config import settings
 from app.core.agent import Agent
 from app.core.types import IncomingMessage
-from app.ui.telegram.keyboards import main_keyboard, topics_keyboard
+from app.tools.quotes_tool import accepts_query, asset_by_label
+from app.ui.telegram.keyboards import main_keyboard, quotes_keyboard, topics_keyboard
 
 router = Router()
 TELEGRAM_MESSAGE_LIMIT = 4096
@@ -65,7 +66,7 @@ def setup_handlers(agent: Agent) -> Router:
             return
 
         if text == agent.quotes_tool.menu_title:
-            await _answer_safe(message, agent.arm_quotes(user_id))
+            await _answer_safe(message, agent.arm_quotes(user_id), reply_markup=quotes_keyboard())
             return
 
         if text == agent.habits_tool.menu_title:
@@ -89,10 +90,16 @@ def setup_handlers(agent: Agent) -> Router:
             await _answer_safe(message, agent.travel_service.answer(user_id, text) or "Ок.")
             return
 
-        if user_id and agent.quotes_waiting(user_id) and re.fullmatch(r"[A-Za-z][A-Za-z0-9.\-]{0,14}", text):
-            result = await agent.quotes_tool.run(ticker=text)
-            await _answer_safe(message, result.message)
-            return
+        if user_id and agent.quotes_waiting(user_id):
+            picked = asset_by_label(text)
+            if picked:
+                await _answer_safe(message, agent.select_quote_asset(user_id, picked), reply_markup=quotes_keyboard())
+                return
+            asset = agent.quote_asset(user_id)
+            if asset and accepts_query(text, asset):
+                result = await agent.quotes_tool.run(ticker=text, asset=asset)
+                await _answer_safe(message, result.message, reply_markup=quotes_keyboard())
+                return
 
         agent.disarm_quotes(user_id)
 
