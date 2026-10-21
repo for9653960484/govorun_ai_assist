@@ -22,6 +22,8 @@ from app.tools.habits.service import HabitsService
 from app.tools.habits.tool import HabitsTool
 from app.tools.image_gen_tool import ImageGenTool
 from app.tools.quotes_tool import QuotesTool, prompt_for
+from app.tools.schedule.service import ScheduleService
+from app.tools.schedule.tool import ScheduleTool
 from app.tools.travel.repository import TravelRepository
 from app.tools.travel.service import TravelService
 from app.tools.travel.tool import TravelTool
@@ -40,7 +42,13 @@ class Agent:
         self.travel_service = TravelService(TravelRepository(settings.sqlite_path))
         self.travel_tool = TravelTool(self.travel_service)
         self.quotes_tool = QuotesTool()
+        self.calendar_tool = CalendarTool(self.calendar_service)
+        self.schedule_service = ScheduleService()
+        self.schedule_tool = ScheduleTool(self.schedule_service)
         self._quote_assets: dict[str, str] = {}
+        self._habits_open: set[str] = set()
+        self._calendar_open: set[str] = set()
+        self._schedule_open: set[str] = set()
         self._register_tools()
 
         self.doc_service = DocumentService()
@@ -55,8 +63,9 @@ class Agent:
         self.registry.register(WeatherStubTool())
         self.registry.register(self.quotes_tool)
         self.registry.register(self.travel_tool)
-        self.registry.register(CalendarTool(self.calendar_service))
+        self.registry.register(self.calendar_tool)
         self.registry.register(self.habits_tool)
+        self.registry.register(self.schedule_tool)
         self.registry.register(ImageGenTool())
 
     def topics_text(self) -> str:
@@ -75,7 +84,10 @@ class Agent:
 
     def arm_quotes(self, user_id: str) -> str:
         self._quote_assets[user_id] = ""
-        return "Котировки. Выберите группу: валюты, криптовалюты, акции или акции (RU)."
+        return (
+            "Команды боту:\n"
+            "<b>выберите</b> группу: валюты, криптовалюты, акции или акции (RU)"
+        )
 
     def select_quote_asset(self, user_id: str, asset: str) -> str:
         self._quote_assets[user_id] = asset
@@ -89,6 +101,37 @@ class Agent:
 
     def quotes_waiting(self, user_id: str) -> bool:
         return user_id in self._quote_assets
+
+    def arm_habits(self, user_id: str) -> str:
+        self._habits_open.add(user_id)
+        return self.habits_service.open_text(user_id)
+
+    def disarm_habits(self, user_id: str) -> None:
+        self._habits_open.discard(user_id)
+
+    def habits_waiting(self, user_id: str) -> bool:
+        return user_id in self._habits_open
+
+    def arm_calendar(self, user_id: str) -> str:
+        self._calendar_open.add(user_id)
+        return self.calendar_service.section_text()
+
+    def disarm_calendar(self, user_id: str) -> None:
+        self._calendar_open.discard(user_id)
+
+    def calendar_waiting(self, user_id: str) -> bool:
+        return user_id in self._calendar_open
+
+    def arm_schedule(self, user_id: str) -> str:
+        self._schedule_open.add(user_id)
+        return self.schedule_service.open_text()
+
+    def disarm_schedule(self, user_id: str) -> None:
+        self._schedule_open.discard(user_id)
+        self.schedule_service.clear_dialog(user_id)
+
+    def schedule_waiting(self, user_id: str) -> bool:
+        return user_id in self._schedule_open
 
     def menu_hint(self, title: str) -> str | None:
         for menu_title, hint in self.registry.menu_entries():
@@ -105,6 +148,7 @@ class Agent:
     async def handle(self, incoming: IncomingMessage) -> str:
         self.habits_tool.bind(incoming.user_id)
         self.travel_tool.bind(incoming.user_id)
+        self.schedule_tool.bind(incoming.user_id)
         decision = self.router.route(incoming)
 
         if decision.route == RouteType.FILE_ONLY and incoming.file_path:
@@ -146,9 +190,12 @@ class Agent:
             travel_answer = self.travel_service.answer(incoming.user_id, incoming.text)
             if travel_answer is not None:
                 return travel_answer
-            month_list = self.calendar_service.answer_month_request(incoming.text)
-            if month_list is not None:
-                return month_list
+            birthday = self.calendar_service.answer_request(
+                incoming.text,
+                capture=self.calendar_waiting(incoming.user_id),
+            )
+            if birthday is not None:
+                return birthday
 
         if decision.route == RouteType.TOOL:
             return await self.chat_service.ask(incoming.user_id, incoming.text)

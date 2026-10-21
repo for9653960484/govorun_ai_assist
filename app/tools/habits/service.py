@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, timedelta
+from html import escape
 
 from app.tools.habits.repository import HabitsRepository
 from app.tools.habits.schemas import Habit
@@ -16,8 +17,19 @@ _RENAME = re.compile(
     r"^(?:переименовать|переименуй)\s+привычк[уа]\s+(.+?)\s+в\s+(.+)$",
     re.IGNORECASE,
 )
-_DONE_CMD = re.compile(r"^(?:сделал|сделала|отметить|отметь)\s+(.+)$", re.IGNORECASE)
+_DONE_CMD = re.compile(
+    r"^(?:сделал|сделала|отметить|отметь)\s+(?:номер\s+|№\s*)?(.+?)[\s.!?]*$",
+    re.IGNORECASE,
+)
 _SHOW = re.compile(r"^(?:привычки|трекер привычек)$", re.IGNORECASE)
+_MARK_HINT = "Отметить сегодня: сделал 1"
+_COMMANDS_HTML = (
+    "Команды боту:\n"
+    "<b>сделал</b> 1\n"
+    "<b>добавить</b> привычку зарядка\n"
+    "<b>удалить</b> привычку 1\n"
+    "<b>переименовать</b> привычку 1 в пробежка"
+)
 
 
 class HabitsService:
@@ -32,11 +44,10 @@ class HabitsService:
         days = [monday + timedelta(days=offset) for offset in range(7)]
         habits = self.repo.list_habits(user_id)
         marks = self.repo.marks_between(user_id, days[0].isoformat(), days[-1].isoformat())
-        example = habits[0].title if habits else "зарядка"
         lines = [
             "Трекер привычек",
             f"{_DONE} сделано, {_MISSED} не сделано",
-            f"Отметить сегодня: сделал {example}",
+            _MARK_HINT if habits else "Добавить: добавить привычку зарядка",
             " ".join(_WEEKDAYS),
         ]
         if not habits:
@@ -110,6 +121,14 @@ class HabitsService:
         current = (today or date.today()).isoformat()
         self.repo.mark_reminder_sent(user_id, current)
 
+    def open_text(self, user_id: str) -> str:
+        """Текст кнопки «Привычки»: команды и доска за неделю."""
+        return f"{_COMMANDS_HTML}\n\n{escape(self.week_board(user_id))}"
+
+    def section_hint(self, user_id: str) -> str:
+        """Подсказка, пока открыт раздел и фраза не похожа на команду."""
+        return _COMMANDS_HTML
+
     def answer_request(self, user_id: str, text: str) -> str | None:
         """Команда списка, правки или отметки. Иначе None."""
         raw = " ".join((text or "").split())
@@ -124,7 +143,10 @@ class HabitsService:
         if match := _RENAME.fullmatch(raw):
             return self.rename_habit(user_id, match.group(1), match.group(2))
         if match := _DONE_CMD.fullmatch(raw):
-            return self.mark_today(user_id, match.group(1))
+            marked = self.mark_today(user_id, match.group(1))
+            if marked is None:
+                return f"Привычка не найдена.\n{self.section_hint(user_id)}"
+            return marked
         return None
 
 

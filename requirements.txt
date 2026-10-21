@@ -14,3 +14,5 @@ python-dotenv>=1.0.1
 requests>=2.32.0
 pycountry>=24.6.1
 babel>=2.16.0
+psycopg[binary]>=3.2
+tzdata>=2024.1

@@ -151,20 +151,28 @@ def _format_precipitation(data: dict[str, Any]) -> str:
     return "без осадков"
 
 
+def _format_wind(value: float | int | str | None) -> str:
+    if value is None:
+        return "н/д"
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "н/д"
+
+
 def _format_weather(data: dict[str, Any]) -> str:
     name = data.get("name", "Неизвестно")
     country = data.get("sys", {}).get("country", "")
     description = (data.get("weather") or [{}])[0].get("description", "нет данных")
     main = data.get("main", {})
-    wind_speed = data.get("wind", {}).get("speed", "н/д")
     return (
         f"Город: {name}{f' ({country})' if country else ''}\n"
-        f"Погода: {description}\n"
-        f"Температура: {_format_temperature(main.get('temp'))} °C\n"
-        f"Ощущается как: {_format_temperature(main.get('feels_like'))} °C\n"
-        f"Влажность: {main.get('humidity', 'н/д')}%\n"
-        f"Осадки: {_format_precipitation(data)}\n"
-        f"Ветер: {wind_speed} м/с"
+        f"🌤️ Погода: {description}\n"
+        f"🌡️ Температура: {_format_temperature(main.get('temp'))} °C\n"
+        f"🤗 Ощущается как: {_format_temperature(main.get('feels_like'))} °C\n"
+        f"💧 Влажность: {main.get('humidity', 'н/д')}%\n"
+        f"☔️ Осадки: {_format_precipitation(data)}\n"
+        f"🌬️ Ветер: {_format_wind(data.get('wind', {}).get('speed'))} м/с"
     )
 
 
@@ -218,9 +226,12 @@ def _localize_api_message(message: str, status_code: int) -> str:
 
 class WeatherStubTool(BaseTool):
     name = "weather_stub"
-    description = "Погода по городу или координатам через OpenWeather."
+    description = (
+        "Погода по городу или координатам через OpenWeather. "
+        "Текст ответа уже оформлен построчно с пиктограммами — его нужно показать пользователю без изменений."
+    )
     menu_title = "Погода"
-    menu_hint = "Погода в городе: сейчас, по желанию прогноз и воздух."
+    menu_hint = "Команды боту:\n<b>напишите</b> город, например Казань"
 
     def schema(self) -> dict[str, Any]:
         return {

@@ -37,10 +37,47 @@ def _build_chat_model():
     return init_chat_model(_model_id(), **kwargs)
 
 
+_VERBATIM_TOOLS = {"weather_stub", "calendar", "schedule"}
+
+
+def _message_text(message: Any) -> str:
+    content = getattr(message, "content", None)
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                parts.append(str(block.get("text") or ""))
+        return "".join(parts).strip()
+    return ""
+
+
+def _verbatim_tool_text(messages: list[Any]) -> str | None:
+    """Текст инструмента текущего хода, который нельзя переписывать."""
+    start = 0
+    for index, message in enumerate(messages):
+        if getattr(message, "type", None) in {"human", "user"}:
+            start = index + 1
+    for message in reversed(messages[start:]):
+        if getattr(message, "name", None) not in _VERBATIM_TOOLS:
+            continue
+        text = _message_text(message)
+        if text:
+            return text
+    return None
+
+
 def extract_agent_text(result: dict[str, Any]) -> str:
     messages = result.get("messages") or []
     if not messages:
         return "Не удалось сформировать ответ."
+
+    verbatim = _verbatim_tool_text(messages)
+    if verbatim:
+        return verbatim
 
     last = messages[-1]
     content = getattr(last, "content", None)

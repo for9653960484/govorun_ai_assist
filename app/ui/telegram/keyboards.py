@@ -23,6 +23,42 @@ def quotes_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
+def schedule_keyboard() -> ReplyKeyboardMarkup:
+    """Кнопки личного расписания."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Сегодня"), KeyboardButton(text="Неделя")],
+            [KeyboardButton(text="Создать"), KeyboardButton(text="Изменить")],
+            [KeyboardButton(text="Перенести"), KeyboardButton(text="Удалить")],
+            [KeyboardButton(text="Напоминание"), KeyboardButton(text="Назад")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def schedule_fields_keyboard() -> ReplyKeyboardMarkup:
+    """Поле события, которое нужно изменить."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Название"), KeyboardButton(text="Описание")],
+            [KeyboardButton(text="Место"), KeyboardButton(text="Длительность")],
+            [KeyboardButton(text="Отмена")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def schedule_confirm_keyboard() -> ReplyKeyboardMarkup:
+    """Подтверждение удаления события."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Да"), KeyboardButton(text="Нет")],
+            [KeyboardButton(text="Отмена")],
+        ],
+        resize_keyboard=True,
+    )
+
+
 def topics_keyboard(titles: list[str]) -> ReplyKeyboardMarkup:
     """Клавиатура тем: пункты инструментов в порядке регистрации."""
     rows: list[list[KeyboardButton]] = []

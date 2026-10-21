@@ -69,6 +69,22 @@ class CalendarRepository:
             )
             return [dict(zip([c[0] for c in cur.description], row)) for row in cur.fetchall()]
 
+    def all_people(self) -> list[dict]:
+        with self._conn() as con:
+            cur = con.execute(
+                """
+                SELECT id, last_name, first_name, middle_name, birth_day, birth_month, birth_year
+                FROM birthdays
+                ORDER BY birth_month ASC, birth_day ASC, last_name, first_name
+                """
+            )
+            return [dict(zip([c[0] for c in cur.description], row)) for row in cur.fetchall()]
+
+    def delete_person(self, person_id: int) -> None:
+        with self._conn() as con:
+            con.execute("DELETE FROM reminders WHERE person_id = ?", (person_id,))
+            con.execute("DELETE FROM birthdays WHERE id = ?", (person_id,))
+
     def by_month(self, month: int) -> list[dict]:
         with self._conn() as con:
             cur = con.execute(

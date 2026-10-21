@@ -10,10 +10,25 @@ from app.config import settings
 from app.core.agent import Agent
 from app.core.types import IncomingMessage
 from app.tools.quotes_tool import accepts_query, asset_by_label
-from app.ui.telegram.keyboards import main_keyboard, quotes_keyboard, topics_keyboard
+from app.ui.telegram.keyboards import (
+    main_keyboard,
+    quotes_keyboard,
+    schedule_confirm_keyboard,
+    schedule_fields_keyboard,
+    schedule_keyboard,
+    topics_keyboard,
+)
 
 router = Router()
 TELEGRAM_MESSAGE_LIMIT = 4096
+
+
+def _schedule_markup(name: str):
+    boards = {
+        "fields": schedule_fields_keyboard,
+        "confirm": schedule_confirm_keyboard,
+    }
+    return boards.get(name, schedule_keyboard)()
 
 
 def _split_for_telegram(text: str, limit: int = TELEGRAM_MESSAGE_LIMIT) -> list[str]:
@@ -34,11 +49,14 @@ def _split_for_telegram(text: str, limit: int = TELEGRAM_MESSAGE_LIMIT) -> list[
 
 async def _answer_safe(message: Message, text: str, **kwargs: object) -> None:
     parts = _split_for_telegram(text)
+    if "parse_mode" not in kwargs and "<b>" in text:
+        kwargs["parse_mode"] = "HTML"
     for idx, part in enumerate(parts):
         if idx == 0:
             await message.answer(part, **kwargs)
         else:
-            await message.answer(part)
+            follow = {"parse_mode": kwargs["parse_mode"]} if "parse_mode" in kwargs else {}
+            await message.answer(part, **follow)
 
 
 def setup_handlers(agent: Agent) -> Router:
@@ -55,33 +73,70 @@ def setup_handlers(agent: Agent) -> Router:
 
         if text == "Показать темы":
             agent.disarm_quotes(user_id)
+            agent.disarm_habits(user_id)
+            agent.disarm_calendar(user_id)
+            agent.disarm_schedule(user_id)
             titles = [title for title, _hint in agent.registry.menu_entries()]
             await _answer_safe(message, agent.topics_text(), reply_markup=topics_keyboard(titles))
             return
 
         if text == "Назад":
             agent.disarm_quotes(user_id)
+            agent.disarm_habits(user_id)
+            agent.disarm_calendar(user_id)
+            agent.disarm_schedule(user_id)
             agent.travel_service.cancel(user_id)
             await _answer_safe(message, "Главное меню.", reply_markup=main_keyboard())
             return
 
         if text == agent.quotes_tool.menu_title:
+            agent.disarm_habits(user_id)
+            agent.disarm_calendar(user_id)
+            agent.disarm_schedule(user_id)
             await _answer_safe(message, agent.arm_quotes(user_id), reply_markup=quotes_keyboard())
             return
 
         if text == agent.habits_tool.menu_title:
             agent.disarm_quotes(user_id)
-            await _answer_safe(message, agent.habits_service.week_board(user_id))
+            agent.disarm_calendar(user_id)
+            agent.disarm_schedule(user_id)
+            agent.travel_service.cancel(user_id)
+            await _answer_safe(message, agent.arm_habits(user_id))
+            return
+
+        if text == agent.calendar_tool.menu_title:
+            agent.disarm_quotes(user_id)
+            agent.disarm_habits(user_id)
+            agent.disarm_schedule(user_id)
+            agent.travel_service.cancel(user_id)
+            await _answer_safe(message, agent.arm_calendar(user_id))
+            return
+
+        if text == agent.schedule_tool.menu_title:
+            agent.disarm_quotes(user_id)
+            agent.disarm_habits(user_id)
+            agent.disarm_calendar(user_id)
+            agent.travel_service.cancel(user_id)
+            if not agent.schedule_service.allowed(user_id):
+                await _answer_safe(message, agent.schedule_service.deny_text())
+                return
+            await _answer_safe(message, agent.arm_schedule(user_id), reply_markup=schedule_keyboard())
             return
 
         if text == agent.travel_tool.menu_title:
             agent.disarm_quotes(user_id)
+            agent.disarm_habits(user_id)
+            agent.disarm_calendar(user_id)
+            agent.disarm_schedule(user_id)
             await _answer_safe(message, agent.travel_service.menu_text(user_id))
             return
 
         hint = agent.menu_hint(text)
         if hint:
             agent.disarm_quotes(user_id)
+            agent.disarm_habits(user_id)
+            agent.disarm_calendar(user_id)
+            agent.disarm_schedule(user_id)
             await _answer_safe(message, hint)
             return
 
@@ -100,6 +155,25 @@ def setup_handlers(agent: Agent) -> Router:
                 result = await agent.quotes_tool.run(ticker=text, asset=asset)
                 await _answer_safe(message, result.message, reply_markup=quotes_keyboard())
                 return
+
+        if user_id and agent.habits_waiting(user_id):
+            habit_answer = agent.habits_service.answer_request(user_id, text)
+            if habit_answer is None:
+                habit_answer = agent.habits_service.section_hint(user_id)
+            await _answer_safe(message, habit_answer)
+            return
+
+        if user_id and agent.calendar_waiting(user_id):
+            birthday = agent.calendar_service.answer_request(text, capture=True)
+            if birthday is None:
+                birthday = agent.calendar_service.section_hint()
+            await _answer_safe(message, birthday)
+            return
+
+        if user_id and agent.schedule_waiting(user_id):
+            reply = agent.schedule_service.answer(user_id, text)
+            await _answer_safe(message, reply.text, reply_markup=_schedule_markup(reply.keyboard))
+            return
 
         agent.disarm_quotes(user_id)
 

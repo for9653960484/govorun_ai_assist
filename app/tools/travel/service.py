@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from html import escape
 
 from app.tools.travel.countries import resolve_country_currencies
 from app.tools.travel.rates import convert_amount, get_rate
@@ -27,6 +28,16 @@ _SET_RATE = re.compile(r"^(?:изменить курс|курс)$", re.IGNORECAS
 _SET_RATE_VALUE = re.compile(r"^курс\s+(\d+(?:[.,]\d+)?)$", re.IGNORECASE)
 _FINISH_CMD = re.compile(r"^(?:завершить|завершить поездку|завершить путешествие)$", re.IGNORECASE)
 _EXPENSE = re.compile(r"^(?:расход|трата)\s+(\d+(?:[.,]\d+)?)(?:\s+(.{1,50}))?$", re.IGNORECASE)
+_COMMANDS_HTML = (
+    "Команды боту:\n"
+    "<b>новая поездка</b>\n"
+    "<b>расход</b> 1200 такси\n"
+    "<b>баланс</b>\n"
+    "<b>история</b>\n"
+    "<b>курс</b>\n"
+    "<b>поездки</b>\n"
+    "<b>завершить</b>"
+)
 _YES = {"да", "ок", "yes", "+"}
 _NO = {"нет", "no", "-"}
 
@@ -58,18 +69,16 @@ class TravelService:
         self.repo.ensure_user(user_id)
         trip = self.repo.get_active(user_id)
         if not trip:
-            return (
-                "Путешествие\n"
-                "Нет активной поездки.\n"
-                "Создать: новая поездка"
-            )
+            return f"{_COMMANDS_HTML}\n\nНет активной поездки."
+        name = escape(str(trip["name"]))
+        home = escape(str(trip["home_currency"]))
+        dest = escape(str(trip["dest_currency"]))
         return (
-            f"{trip['name']}: {trip['home_currency']} → {trip['dest_currency']}\n"
-            f"Курс: 1 {trip['home_currency']} = {format_amount(float(trip['rate']))} {trip['dest_currency']}\n"
-            f"Остаток: {format_amount(float(trip['balance_dest']))} {trip['dest_currency']} = "
-            f"{format_amount(float(trip['balance_home']))} {trip['home_currency']}\n"
-            "Расход в валюте поездки: 1200 такси\n"
-            "Ещё: баланс, история, курс, завершить"
+            f"{_COMMANDS_HTML}\n\n"
+            f"{name}: {home} → {dest}\n"
+            f"Курс: 1 {home} = {format_amount(float(trip['rate']))} {dest}\n"
+            f"Остаток: {format_amount(float(trip['balance_dest']))} {dest} = "
+            f"{format_amount(float(trip['balance_home']))} {home}"
         )
 
     def answer(self, user_id: str, text: str) -> str | None:
