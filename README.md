@@ -34,7 +34,8 @@
 - `LANGCHAIN_TEMPERATURE` - температура модели для LangChain-агента (по умолчанию `0.3`).
 - `LANGSMITH_TRACING` / `LANGSMITH_API_KEY` - опционально, трассировка агента в [LangSmith](https://smith.langchain.com).
 - `TELEGRAM_BOT_TOKEN` - опционально, для Telegram-канала.
-- `WEB_HOST` - по умолчанию `127.0.0.1`.
+- `TELEGRAM_PROXY` - опционально, SOCKS или HTTP-прокси для Telegram, например `socks5://127.0.0.1:1080`. Нужен, если с сервера не открывается `api.telegram.org`. Туннель поднимается с домашнего компьютера: `ssh -N -R 127.0.0.1:1080 Blond`. Пока этот компьютер выключен, бот до Telegram не доходит.
+- `WEB_HOST` - по умолчанию `127.0.0.1`. На сервере в `.env` должно быть `0.0.0.0`.
 - `WEB_PORT` - по умолчанию `8000`.
 
 Приложение автоматически загружает `.env` из корня репозитория через `python-dotenv`.
@@ -167,6 +168,7 @@ OPENAI_IMAGE_MODEL=gpt-image-1
 WEB_HOST=0.0.0.0
 WEB_PORT=8000
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_PROXY=socks5://127.0.0.1:1080
 ```
 
 ### 3) Первый запуск

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
 
 from app.config import settings
 from app.core.agent import Agent
@@ -15,7 +16,9 @@ async def run_telegram(agent: Agent) -> None:
     if not settings.telegram_bot_token:
         return
 
-    bot = Bot(token=settings.telegram_bot_token)
+    proxy = settings.telegram_proxy.strip()
+    session = AiohttpSession(proxy=proxy) if proxy else None
+    bot = Bot(token=settings.telegram_bot_token, session=session)
     dp = Dispatcher()
     dp.include_router(setup_handlers(agent))
     reminders = asyncio.create_task(run_habit_reminders(bot, agent.habits_service))

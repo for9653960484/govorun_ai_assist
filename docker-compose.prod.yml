@@ -3,9 +3,9 @@ services:
     container_name: govorun_app
     image: ghcr.io/for9653960484/govorun_ai_assist:latest
     restart: unless-stopped
+    # Общая сеть с хостом: бот видит SOCKS-туннель на 127.0.0.1:1080.
+    network_mode: host
     env_file:
       - .env
-    ports:
-      - "8000:8000"
     volumes:
       - ./data:/app/data

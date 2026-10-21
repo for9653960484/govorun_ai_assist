@@ -5,6 +5,7 @@ langgraph>=0.2.60
 fastapi>=0.115.0
 uvicorn>=0.30.0
 aiogram>=3.7.0
+aiohttp-socks>=0.10.1
 python-docx>=1.1.2
 pypdf>=4.2.0
 jinja2>=3.1.4

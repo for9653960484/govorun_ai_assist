@@ -29,6 +29,7 @@ class Settings:
     langsmith_api_key: str = os.getenv("LANGSMITH_API_KEY", "")
 
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    telegram_proxy: str = os.getenv("TELEGRAM_PROXY", "")
     web_host: str = os.getenv("WEB_HOST", "127.0.0.1")
     web_port: int = int(os.getenv("WEB_PORT", "8000"))
 
