@@ -26,6 +26,7 @@ class CalendarEvent:
     ends_at: datetime
     all_day: bool = False
     sequence: int = 0
+    birthday: bool = False
 
 
 @dataclass(slots=True)

@@ -22,7 +22,9 @@ from app.tools.habits.service import HabitsService
 from app.tools.habits.tool import HabitsTool
 from app.tools.image_gen_tool import ImageGenTool
 from app.tools.quotes_tool import QuotesTool, prompt_for
+from app.tools.schedule.birthdays import paint_birthdays, sync_birthdays
 from app.tools.schedule.service import ScheduleService
+from app.utils.logger import get_logger
 from app.tools.schedule.tool import ScheduleTool
 from app.tools.travel.repository import TravelRepository
 from app.tools.travel.service import TravelService
@@ -45,6 +47,11 @@ class Agent:
         self.calendar_tool = CalendarTool(self.calendar_service)
         self.schedule_service = ScheduleService()
         self.schedule_tool = ScheduleTool(self.schedule_service)
+        try:
+            sync_birthdays()
+            paint_birthdays()
+        except Exception:
+            get_logger(__name__).exception("Не удалось передать дни рождения в Google Календарь")
         self._quote_assets: dict[str, str] = {}
         self._habits_open: set[str] = set()
         self._calendar_open: set[str] = set()

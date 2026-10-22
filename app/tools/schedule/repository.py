@@ -254,4 +254,5 @@ def _from_row(row: dict) -> CalendarEvent:
         starts_at=row["starts_at"],
         ends_at=row["ends_at"],
         all_day=bool(row["all_day"]),
+        birthday=str(row["summary"] or "").startswith("День рождения:"),
     )

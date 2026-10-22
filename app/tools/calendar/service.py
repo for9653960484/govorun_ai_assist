@@ -5,6 +5,7 @@ from datetime import date
 
 from app.tools.calendar.repository import CalendarRepository
 from app.tools.calendar.schemas import PersonBirthday
+from app.tools.schedule.birthdays import publish_birthday, withdraw_birthday
 
 _MONTH_WORDS: dict[str, int] = {
     "январь": 1,
@@ -115,6 +116,16 @@ class CalendarService:
     def section_hint(self) -> str:
         return _ENTRY_HINT
 
+    def _with_google(self, text: str, person_id: int) -> str:
+        row = self.repo.get_person(person_id)
+        already = bool(row and str(row.get("google_event_id") or "").strip())
+        error = publish_birthday(self.repo, person_id)
+        if error:
+            return f"{text}\n\nВ Google Календарь не отправлено: {error}"
+        if already:
+            return text
+        return f"{text}\n\nВ Google Календаре это событие на весь день, уведомление за 1 день."
+
     def save_birthday(self, person: PersonBirthday) -> str:
         """Пишет день рождения в SQLite и возвращает список этого месяца."""
         person = PersonBirthday(
@@ -132,9 +143,9 @@ class CalendarService:
             same_last = str(row["last_name"]).casefold() == person.last_name.casefold()
             same_first = str(row["first_name"]).casefold() == person.first_name.casefold()
             if same_day and same_last and same_first:
-                return self.format_month_birthdays(person.month)
-        self.repo.add_person(person)
-        return self.format_month_birthdays(person.month)
+                return self._with_google(self.format_month_birthdays(person.month), int(row["id"]))
+        person_id = self.repo.add_person(person)
+        return self._with_google(self.format_month_birthdays(person.month), person_id)
 
     def delete_by_name(self, query: str) -> str | None:
         """Удаляет одну запись по имени. None — никого не нашли."""
@@ -166,6 +177,10 @@ class CalendarService:
             hint = "Уточните дату." if len(names) == 1 else "Уточните имя."
             return _format_rows(found, "") + f"\n{hint}"
         row = found[0]
+        event_id = str(row.get("google_event_id") or "").strip()
+        error = withdraw_birthday(event_id)
+        if error:
+            return f"Событие в Google Календаре не удалено: {error}"
         self.repo.delete_person(int(row["id"]))
         return f"Удалено: {_format_line(row)}"
 

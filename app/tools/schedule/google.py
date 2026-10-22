@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote
 
 import requests
@@ -12,6 +12,8 @@ from app.tools.schedule.schemas import CalendarEvent, ScheduleError
 _TOKEN_URL = "https://oauth2.googleapis.com/token"
 _API = "https://www.googleapis.com/calendar/v3"
 _TIMEOUT = 20
+BIRTHDAY_COLOR_ID = "10"
+BIRTHDAY_PREFIX = "День рождения:"
 _token = ""
 _token_until = datetime.min.replace(tzinfo=timezone.utc)
 
@@ -45,6 +47,73 @@ class GoogleCalendar:
             if not page:
                 break
         return events
+
+    def create_yearly_all_day(
+        self,
+        summary: str,
+        start_on: date,
+        description: str = "",
+        reminder_minutes: int = 1440,
+        marker: str = "",
+    ) -> CalendarEvent:
+        """Событие на весь день, каждый год, с уведомлением Google Календаря."""
+        end_on = start_on + timedelta(days=1)
+        zone = settings.schedule_timezone
+        body: dict = {
+            "summary": summary,
+            "description": description,
+            "start": {"date": start_on.isoformat(), "timeZone": zone},
+            "end": {"date": end_on.isoformat(), "timeZone": zone},
+            "recurrence": ["RRULE:FREQ=YEARLY"],
+            "colorId": BIRTHDAY_COLOR_ID,
+            "reminders": {
+                "useDefault": False,
+                "overrides": [{"method": "popup", "minutes": reminder_minutes}],
+            },
+        }
+        if marker:
+            body["extendedProperties"] = {"private": {"govorunBirthday": marker}}
+        created = self._json("POST", self._url(""), json=body)
+        parsed = _from_item(created)
+        if parsed is None:
+            raise ScheduleError("Google Календарь не подтвердил день рождения.")
+        return parsed
+
+    def find_birthday(self, marker: str) -> str:
+        """Идентификатор уже созданного дня рождения или пустая строка."""
+        if not marker:
+            return ""
+        payload = self._json(
+            "GET",
+            self._url(""),
+            params={"privateExtendedProperty": f"govorunBirthday={marker}", "maxResults": "2"},
+        )
+        for item in payload.get("items") or []:
+            if item.get("status") == "cancelled":
+                continue
+            event_id = str(item.get("id") or "").strip()
+            if event_id:
+                return event_id
+        return ""
+
+    def paint_birthday(self, event_id: str) -> None:
+        """Красит серию дня рождения в зелёный цвет Google Календаря."""
+        if not event_id:
+            return
+        self._json(
+            "PATCH",
+            self._url(f"/{quote(event_id, safe='')}"),
+            json={"colorId": BIRTHDAY_COLOR_ID},
+        )
+
+    def delete_id(self, event_id: str) -> None:
+        if not event_id:
+            return
+        try:
+            self._request("DELETE", self._url(f"/{quote(event_id, safe='')}"))
+        except ScheduleError as exc:
+            if "не найдено" not in exc.message:
+                raise
 
     def create_event(self, event: CalendarEvent) -> CalendarEvent:
         created = self._json("POST", self._url(""), json=_body(event))
@@ -119,7 +188,9 @@ class GoogleCalendar:
         if response.status_code == 412:
             raise ScheduleError("Событие в Google Календаре уже изменилось. Откройте список ещё раз.")
         if response.status_code not in {200, 201, 204}:
-            raise ScheduleError(f"Google Календарь ответил {response.status_code}.")
+            detail = _error_detail(response)
+            suffix = f": {detail}" if detail else ""
+            raise ScheduleError(f"Google Календарь ответил {response.status_code}{suffix}.")
         return response
 
 
@@ -158,6 +229,17 @@ def _access_token() -> str:
     return token
 
 
+def _error_detail(response: requests.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        return ""
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(error, dict):
+        return str(error.get("message") or "")[:180]
+    return ""
+
+
 def _clear_token() -> None:
     global _token, _token_until
     _token = ""
@@ -166,6 +248,18 @@ def _clear_token() -> None:
 
 def _body(event: CalendarEvent) -> dict:
     zone = settings.schedule_timezone
+    if event.all_day:
+        start_on = event.starts_at.astimezone(load_timezone(zone)).date()
+        end_on = event.ends_at.astimezone(load_timezone(zone)).date()
+        if end_on <= start_on:
+            end_on = start_on + timedelta(days=1)
+        return {
+            "summary": event.summary,
+            "description": event.description,
+            "location": event.location,
+            "start": {"date": start_on.isoformat(), "timeZone": zone},
+            "end": {"date": end_on.isoformat(), "timeZone": zone},
+        }
     return {
         "summary": event.summary,
         "description": event.description,
@@ -202,7 +296,15 @@ def _from_item(item: dict) -> CalendarEvent | None:
         ends_at=end,
         all_day=all_day,
         sequence=int(item.get("sequence") or 0),
+        birthday=_is_birthday(item, summary),
     )
+
+
+def _is_birthday(item: dict, summary: str) -> bool:
+    private = (item.get("extendedProperties") or {}).get("private") or {}
+    if str(private.get("govorunBirthday") or "").strip():
+        return True
+    return summary.startswith(BIRTHDAY_PREFIX)
 
 
 def _parse_point(value: dict, all_day: bool) -> datetime | None:

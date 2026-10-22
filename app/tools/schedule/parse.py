@@ -85,3 +85,13 @@ def week_bounds(day: datetime, tz: timezone | ZoneInfo) -> tuple[datetime, datet
     monday = day.date() - timedelta(days=day.date().weekday())
     start = datetime.combine(monday, clock.min, tzinfo=tz)
     return start, start + timedelta(days=7)
+
+
+def month_bounds(day: datetime, tz: timezone | ZoneInfo) -> tuple[datetime, datetime]:
+    first = day.date().replace(day=1)
+    start = datetime.combine(first, clock.min, tzinfo=tz)
+    if first.month == 12:
+        nxt = first.replace(year=first.year + 1, month=1)
+    else:
+        nxt = first.replace(month=first.month + 1)
+    return start, datetime.combine(nxt, clock.min, tzinfo=tz)

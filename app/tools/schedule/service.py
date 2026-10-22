@@ -8,24 +8,40 @@ from app.tools.schedule.parse import (
     load_timezone,
     parse_duration,
     parse_remind_minutes,
+    month_bounds,
     parse_start,
     week_bounds,
 )
 from app.tools.schedule.repository import ScheduleRepository
 from app.tools.schedule.schemas import CalendarEvent, ScheduleError, ScheduleReply
-from app.tools.schedule.google import GoogleCalendar
+from app.tools.schedule.birthdays import sync_birthdays
+from app.tools.schedule.google import BIRTHDAY_PREFIX, GoogleCalendar
 
 _COMMANDS = (
     "Команды боту:\n"
     "<b>сегодня</b>\n"
     "<b>неделя</b>\n"
+    "<b>месяц</b>\n"
     "<b>создать</b>\n"
     "<b>изменить</b>\n"
     "<b>перенести</b>\n"
     "<b>удалить</b>\n"
     "<b>напоминание</b>"
 )
-_WEEKDAYS = ("понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье")
+_MONTHS = (
+    "Январь",
+    "Февраль",
+    "Март",
+    "Апрель",
+    "Май",
+    "Июнь",
+    "Июль",
+    "Август",
+    "Сентябрь",
+    "Октябрь",
+    "Ноябрь",
+    "Декабрь",
+)
 _FIELDS = {
     "название": "summary",
     "описание": "description",
@@ -36,6 +52,7 @@ _COMMAND_NAMES = {
     "сегодня": "day",
     "день": "day",
     "неделя": "week",
+    "месяц": "month",
     "создать": "create",
     "изменить": "edit",
     "перенести": "move",
@@ -60,9 +77,12 @@ class ScheduleService:
 
     def open_text(self) -> str:
         gaps = self._gaps()
-        if not gaps:
-            return _COMMANDS
-        return f"{_COMMANDS}\n\nДля работы задайте: {', '.join(gaps)}."
+        if gaps:
+            return f"{_COMMANDS}\n\nДля работы задайте: {', '.join(gaps)}."
+        note = sync_birthdays()
+        if note:
+            return f"{_COMMANDS}\n\n{note}"
+        return _COMMANDS
 
     def clear_dialog(self, user_id: str) -> None:
         if not settings.schedule_database_url:
@@ -111,6 +131,10 @@ class ScheduleService:
         if command == "week":
             start, end = week_bounds(now, self.tz)
             title = f"Неделя {start:%d.%m}–{(end - timedelta(days=1)):%d.%m}"
+            return ScheduleReply(self._show(start, end, title))
+        if command == "month":
+            start, end = month_bounds(now, self.tz)
+            title = f"{_MONTHS[start.month - 1]} {start.year}"
             return ScheduleReply(self._show(start, end, title))
         if command == "create":
             self.repo.set_dialog(user_id, "create_title", {})
@@ -289,10 +313,10 @@ class ScheduleService:
         lines = [title]
         current_day = None
         for event in events:
-            local = event.starts_at.astimezone(self.tz)
-            if local.date() != current_day:
-                current_day = local.date()
-                lines.append(f"{local:%d.%m}, {_WEEKDAYS[local.weekday()]}")
+            local = event.starts_at.astimezone(self.tz).date()
+            if current_day is not None and local != current_day:
+                lines.append("")
+            current_day = local
             lines.append(_format_event(event, self.tz))
         if cached:
             lines.append("Показан локальный кэш: Google Календарь сейчас недоступен.")
@@ -377,6 +401,7 @@ def _dump(event: CalendarEvent) -> dict:
         "ends_at": event.ends_at.isoformat(),
         "all_day": event.all_day,
         "sequence": event.sequence,
+        "birthday": event.birthday,
     }
 
 
@@ -392,22 +417,37 @@ def _load(data: dict) -> CalendarEvent:
         ends_at=datetime.fromisoformat(str(data["ends_at"])),
         all_day=bool(data.get("all_day")),
         sequence=int(data.get("sequence") or 0),
+        birthday=_marked_birthday(str(data.get("summary") or ""), bool(data.get("birthday"))),
     )
+
+
+def _marked_birthday(summary: str, flagged: bool) -> bool:
+    return flagged or summary.startswith(BIRTHDAY_PREFIX)
+
+
+_WEEKDAY_SHORT = ("ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС")
+
+
+def _day_label(moment: datetime) -> str:
+    return f"{moment:%d.%m} ({_WEEKDAY_SHORT[moment.weekday()]})"
 
 
 def _format_event(event: CalendarEvent, tz, index: int | None = None) -> str:
     start = event.starts_at.astimezone(tz)
-    end = event.ends_at.astimezone(tz)
     prefix = f"{index}. " if index else ""
-    if event.all_day:
-        when = f"{start:%d.%m} весь день"
-    elif start.date() == end.date():
-        when = f"{start:%d.%m %H:%M}–{end:%H:%M}"
+    summary = event.summary
+    if event.birthday:
+        if summary.startswith(BIRTHDAY_PREFIX):
+            summary = summary[len(BIRTHDAY_PREFIX):].strip()
+        mark = "🎂 "
+        when = _day_label(start)
     else:
-        when = f"{start:%d.%m %H:%M}–{end:%d.%m %H:%M}"
-    lines = [f"{prefix}{when}  {event.summary}"]
-    if event.location:
-        lines.append(f"место: {event.location}")
-    if event.description:
+        mark = ""
+        if event.all_day:
+            when = f"{_day_label(start)} весь день"
+        else:
+            when = f"{_day_label(start)} {start:%H:%M}"
+    lines = [f"{prefix}{when}  {mark}{summary}"]
+    if event.description and not event.birthday:
         lines.append(event.description)
     return "\n".join(lines)

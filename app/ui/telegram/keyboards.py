@@ -27,7 +27,7 @@ def schedule_keyboard() -> ReplyKeyboardMarkup:
     """Кнопки личного расписания."""
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Сегодня"), KeyboardButton(text="Неделя")],
+            [KeyboardButton(text="Сегодня"), KeyboardButton(text="Неделя"), KeyboardButton(text="Месяц")],
             [KeyboardButton(text="Создать"), KeyboardButton(text="Изменить")],
             [KeyboardButton(text="Перенести"), KeyboardButton(text="Удалить")],
             [KeyboardButton(text="Напоминание"), KeyboardButton(text="Назад")],

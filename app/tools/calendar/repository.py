@@ -43,6 +43,9 @@ class CalendarRepository:
                 )
                 """
             )
+            columns = {row[1] for row in con.execute("PRAGMA table_info(birthdays)")}
+            if "google_event_id" not in columns:
+                con.execute("ALTER TABLE birthdays ADD COLUMN google_event_id TEXT")
 
     def add_person(self, person: PersonBirthday) -> int:
         with self._conn() as con:
@@ -60,7 +63,7 @@ class CalendarRepository:
         with self._conn() as con:
             cur = con.execute(
                 """
-                SELECT id, last_name, first_name, middle_name, birth_day, birth_month, birth_year
+                SELECT id, last_name, first_name, middle_name, birth_day, birth_month, birth_year, google_event_id
                 FROM birthdays
                 WHERE last_name LIKE ? OR first_name LIKE ? OR middle_name LIKE ?
                 ORDER BY last_name, first_name
@@ -73,12 +76,34 @@ class CalendarRepository:
         with self._conn() as con:
             cur = con.execute(
                 """
-                SELECT id, last_name, first_name, middle_name, birth_day, birth_month, birth_year
+                SELECT id, last_name, first_name, middle_name, birth_day, birth_month, birth_year, google_event_id
                 FROM birthdays
                 ORDER BY birth_month ASC, birth_day ASC, last_name, first_name
                 """
             )
             return [dict(zip([c[0] for c in cur.description], row)) for row in cur.fetchall()]
+
+    def get_person(self, person_id: int) -> dict | None:
+        with self._conn() as con:
+            cur = con.execute(
+                """
+                SELECT id, last_name, first_name, middle_name, birth_day, birth_month, birth_year, google_event_id
+                FROM birthdays
+                WHERE id = ?
+                """,
+                (person_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            return dict(zip([c[0] for c in cur.description], row))
+
+    def set_google_event_id(self, person_id: int, event_id: str) -> None:
+        with self._conn() as con:
+            con.execute(
+                "UPDATE birthdays SET google_event_id = ? WHERE id = ?",
+                (event_id, person_id),
+            )
 
     def delete_person(self, person_id: int) -> None:
         with self._conn() as con:
@@ -89,7 +114,7 @@ class CalendarRepository:
         with self._conn() as con:
             cur = con.execute(
                 """
-                SELECT id, last_name, first_name, middle_name, birth_day, birth_month, birth_year
+                SELECT id, last_name, first_name, middle_name, birth_day, birth_month, birth_year, google_event_id
                 FROM birthdays
                 WHERE birth_month = ?
                 ORDER BY birth_day ASC, last_name, first_name
