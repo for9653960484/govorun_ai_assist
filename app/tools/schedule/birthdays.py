@@ -19,7 +19,13 @@ def sync_birthdays() -> str | None:
     if not _google_ready():
         return None
     repo = CalendarRepository(settings.sqlite_path)
-    pending = [row for row in repo.all_people() if not str(row.get("google_event_id") or "").strip()]
+    owner = settings.telegram_allowed_user_id
+    if not owner:
+        return None
+    pending = [
+        row for row in repo.all_people(owner)
+        if not str(row.get("google_event_id") or "").strip()
+    ]
     if not pending:
         return None
     failed = 0
@@ -36,11 +42,13 @@ def sync_birthdays() -> str | None:
 
 def publish_birthday(repo: CalendarRepository, person_id: int) -> str | None:
     """Создаёт ежегодное событие на весь день. None — событие есть."""
-    row = repo.get_person(person_id)
+    row = repo.get_person(settings.telegram_allowed_user_id, person_id)
     if row is None:
         return None
     if not _google_ready():
         return "Не задан доступ к Google Календарю."
+    if str(row.get("user_id") or "") != settings.telegram_allowed_user_id:
+        return None
     existing = str(row.get("google_event_id") or "").strip()
     if existing:
         return None
@@ -65,7 +73,7 @@ def publish_birthday(repo: CalendarRepository, person_id: int) -> str | None:
             )
             event_id = created.uid
         calendar.paint_birthday(event_id)
-        repo.set_google_event_id(person_id, event_id)
+        repo.set_google_event_id(str(row["user_id"]), person_id, event_id)
     except ScheduleError as exc:
         _logger.warning("День рождения %s не записан в Google Календарь: %s", person_id, exc.message)
         return exc.message
@@ -78,7 +86,10 @@ def paint_birthdays() -> None:
         return
     repo = CalendarRepository(settings.sqlite_path)
     calendar = GoogleCalendar(settings.google_calendar_id)
-    for row in repo.all_people():
+    owner = settings.telegram_allowed_user_id
+    if not owner:
+        return
+    for row in repo.all_people(owner):
         event_id = str(row.get("google_event_id") or "").strip()
         if not event_id:
             continue

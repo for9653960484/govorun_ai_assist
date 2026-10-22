@@ -56,6 +56,7 @@ class Agent:
         self._habits_open: set[str] = set()
         self._calendar_open: set[str] = set()
         self._schedule_open: set[str] = set()
+        self.access_pending: dict[str, str] = {}
         self._register_tools()
 
         self.doc_service = DocumentService()
@@ -75,19 +76,36 @@ class Agent:
         self.registry.register(self.schedule_tool)
         self.registry.register(ImageGenTool())
 
-    def topics_text(self) -> str:
-        topics = self.tag_service.list_topics()
-        lines = ["Доступные темы:"] + [f"- #{x['tag']} ({x['name']})" for x in topics]
+    def projects_text(self, user_id: str) -> str:
+        topics = self.tag_service.list_topics(user_id)
+        lines = ["Текущие проекты:"]
+        lines += [f"- #{item['tag']} ({item['name']})" for item in topics] or ["Пока нет."]
         lines += [
             "",
             "Редактирование:",
+            "- добавить проект название",
             "- удалить #тег",
             "- переименовать #старый_тег #новый_тег",
+            "- файл #тег",
         ]
-        entries = self.registry.menu_entries()
-        if entries:
-            lines += ["", "Инструменты:"] + [f"- {title}" for title, _hint in entries]
         return "\n".join(lines)
+
+    def help_text(self, user_id: str) -> str:
+        items = [
+            "Добавить проект: добавить проект название",
+            "Сменить проект: #тег",
+            "Удалить проект: удалить #тег",
+            "Переименовать проект: переименовать #старый_тег #новый_тег",
+            "Файл обсуждения: файл #тег",
+        ]
+        if user_id == settings.telegram_allowed_user_id:
+            items += [
+                "Пользователи: пользователи",
+                "Удалить пользователя: удалить пользователя @имя",
+            ]
+        else:
+            items.append("Отвязаться от бота: отвязаться")
+        return "Помощь\n\n" + "\n\n".join(items)
 
     def arm_quotes(self, user_id: str) -> str:
         self._quote_assets[user_id] = ""
@@ -140,21 +158,55 @@ class Agent:
     def schedule_waiting(self, user_id: str) -> bool:
         return user_id in self._schedule_open
 
+    def release_user(self, user_id: str) -> None:
+        """Сбрасывает память и открытые разделы удалённого пользователя."""
+        if not user_id:
+            return
+        self.short_memory.clear(user_id)
+        self.disarm_quotes(user_id)
+        self.disarm_habits(user_id)
+        self.disarm_calendar(user_id)
+        self.disarm_schedule(user_id)
+        self.doc_service.drop_user(user_id)
+
     def menu_hint(self, title: str) -> str | None:
         for menu_title, hint in self.registry.menu_entries():
             if menu_title == title:
                 return hint
         return None
 
-    def rename_topic_tag(self, old_tag: str, new_tag: str) -> tuple[bool, str]:
-        return self.tag_service.rename_topic_tag(old_tag, new_tag)
+    def create_project(self, user_id: str, name: str) -> tuple[bool, str]:
+        return self.tag_service.create_project(user_id, name)
 
-    def delete_topic_by_tag(self, tag: str) -> tuple[bool, str]:
-        return self.tag_service.delete_topic_by_tag(tag)
+    def project_file(self, user_id: str, tag: str) -> Path | str:
+        """Путь к текстовому файлу обсуждения. Строка — почему файла нет."""
+        prepared = self.tag_service.discussion_letter(user_id, tag)
+        if isinstance(prepared, str):
+            return prepared
+        _subject, body = prepared
+        shown = self.tag_service.normalize_tag(tag)
+        folder = settings.data_root / "projects" / user_id
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"{shown}.txt"
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def _remember_project(self, user_id: str, question: str, answer: str) -> None:
+        tag = self.user_service.get_active_tag(user_id) or ""
+        if not tag:
+            return
+        self.tag_service.remember_discussion(user_id, tag, question, answer)
+
+    def rename_topic_tag(self, user_id: str, old_tag: str, new_tag: str) -> tuple[bool, str]:
+        return self.tag_service.rename_topic_tag(user_id, old_tag, new_tag)
+
+    def delete_topic_by_tag(self, user_id: str, tag: str) -> tuple[bool, str]:
+        return self.tag_service.delete_topic_by_tag(user_id, tag)
 
     async def handle(self, incoming: IncomingMessage) -> str:
         self.habits_tool.bind(incoming.user_id)
         self.travel_tool.bind(incoming.user_id)
+        self.calendar_tool.bind(incoming.user_id)
         self.schedule_tool.bind(incoming.user_id)
         decision = self.router.route(incoming)
 
@@ -168,11 +220,12 @@ class Agent:
             )
 
         if decision.route == RouteType.TAG_SWITCH and decision.tag:
-            topic = self.tag_service.switch_topic(decision.tag)
+            topic = self.tag_service.switch_topic(incoming.user_id, decision.tag)
             if not topic:
-                return f"Тег #{decision.tag} не найден.\n\n{self.topics_text()}"
-            self.user_service.set_active_tag(incoming.user_id, decision.tag)
-            return f"Активная тема переключена на #{decision.tag} ({topic['name']})."
+                return f"Тег #{decision.tag} не найден.\n\n{self.projects_text(incoming.user_id)}"
+            active = self.tag_service.normalize_tag(decision.tag)
+            self.user_service.set_active_tag(incoming.user_id, active)
+            return f"Активный проект: #{active} ({topic['name']}). Дальше диалог сохранится в нём."
 
         if decision.route == RouteType.DOCUMENT_QA:
             if incoming.file_path:
@@ -198,6 +251,7 @@ class Agent:
             if travel_answer is not None:
                 return travel_answer
             birthday = self.calendar_service.answer_request(
+                incoming.user_id,
                 incoming.text,
                 capture=self.calendar_waiting(incoming.user_id),
             )
@@ -215,4 +269,6 @@ class Agent:
                 + "3) Обычный чат"
             )
 
-        return await self.chat_service.ask(incoming.user_id, incoming.text)
+        answer = await self.chat_service.ask(incoming.user_id, incoming.text)
+        self._remember_project(incoming.user_id, incoming.text, answer)
+        return answer

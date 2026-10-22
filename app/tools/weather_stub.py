@@ -17,6 +17,18 @@ WEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast"
 AIR_URL = "https://api.openweathermap.org/data/2.5/air_pollution"
 GEOCODE_URL = "https://api.openweathermap.org/geo/1.0/direct"
+_CITY_ALIASES = {
+    "питер": "Санкт-Петербург",
+    "петербург": "Санкт-Петербург",
+    "санкт-петербург": "Санкт-Петербург",
+    "санкт петербург": "Санкт-Петербург",
+    "спб": "Санкт-Петербург",
+    "ленинград": "Санкт-Петербург",
+    "saint petersburg": "Санкт-Петербург",
+    "st petersburg": "Санкт-Петербург",
+    "st. petersburg": "Санкт-Петербург",
+    "petersburg": "Санкт-Петербург",
+}
 
 
 def _api_key() -> str:
@@ -113,21 +125,37 @@ def _cache_put(latitude: float, longitude: float, current: dict[str, Any]) -> No
     _save_cache(cache)
 
 
-def _resolve_location(city: str, country_code: str | None, api_key: str) -> tuple[tuple[float, float] | None, str | None]:
+def _city_query(city: str) -> str:
+    folded = " ".join(city.replace("ё", "е").split()).casefold()
+    return _CITY_ALIASES.get(folded, city)
+
+
+def _place_name(loc: dict[str, Any]) -> str:
+    local_names = loc.get("local_names") or {}
+    return str(local_names.get("ru") or loc.get("name") or "").strip()
+
+
+def _resolve_location(
+    city: str,
+    country_code: str | None,
+    api_key: str,
+) -> tuple[tuple[float, float] | None, str | None, str | None]:
+    query = _city_query(city)
     locations, err = _request_json(
         GEOCODE_URL,
-        {"q": city, "limit": 5, "appid": api_key},
+        {"q": query, "limit": 5, "appid": api_key},
     )
     if err:
-        return None, err
+        return None, None, err
     if not locations:
-        return None, "Город не найден."
+        return None, None, "Город не найден."
+    chosen = locations[0]
     if country_code:
         for loc in locations:
             if str(loc.get("country", "")).lower() == country_code.lower():
-                return (float(loc["lat"]), float(loc["lon"])), None
-    first = locations[0]
-    return (float(first["lat"]), float(first["lon"])), None
+                chosen = loc
+                break
+    return (float(chosen["lat"]), float(chosen["lon"])), _place_name(chosen) or query, None
 
 
 def _format_temperature(value: float | int | str | None) -> str:
@@ -160,8 +188,8 @@ def _format_wind(value: float | int | str | None) -> str:
         return "н/д"
 
 
-def _format_weather(data: dict[str, Any]) -> str:
-    name = data.get("name", "Неизвестно")
+def _format_weather(data: dict[str, Any], place_name: str | None = None) -> str:
+    name = place_name or data.get("name", "Неизвестно")
     country = data.get("sys", {}).get("country", "")
     description = (data.get("weather") or [{}])[0].get("description", "нет данных")
     main = data.get("main", {})
@@ -176,9 +204,9 @@ def _format_weather(data: dict[str, Any]) -> str:
     )
 
 
-def _format_forecast(data: dict[str, Any]) -> str:
+def _format_forecast(data: dict[str, Any], place_name: str | None = None) -> str:
     city = data.get("city", {})
-    lines = [f"Прогноз на 5 дней: {city.get('name', 'Неизвестно')}"]
+    lines = [f"Прогноз на 5 дней: {place_name or city.get('name', 'Неизвестно')}"]
     daily: dict[str, list[dict[str, Any]]] = {}
     for item in data.get("list", []):
         dt = datetime.fromtimestamp(item.get("dt", 0), tz=timezone.utc).strftime("%d.%m")
@@ -266,13 +294,14 @@ class WeatherStubTool(BaseTool):
         if lat is None or lon is None:
             if not city:
                 return ToolResult(ok=False, message="Передайте либо `city`, либо `latitude` и `longitude`.")
-            coords, err = _resolve_location(city, country_code, api_key)
+            coords, place_name, err = _resolve_location(city, country_code, api_key)
             if err:
                 return ToolResult(ok=False, message=err)
             assert coords is not None
             latitude, longitude = coords
         else:
             latitude, longitude = float(lat), float(lon)
+            place_name = None
 
         current_data, err = _request_json(
             WEATHER_URL,
@@ -281,13 +310,13 @@ class WeatherStubTool(BaseTool):
         if err:
             cached = _cache_get(latitude, longitude)
             if cached:
-                body = _format_weather(cached) + "\n\n(Показаны свежие данные из локального кэша.)"
+                body = _format_weather(cached, place_name) + "\n\n(Показаны свежие данные из локального кэша.)"
                 return ToolResult(ok=True, message=body, data={"current": cached, "source": "cache"})
             return ToolResult(ok=False, message=err)
         assert current_data is not None
         _cache_put(latitude, longitude, current_data)
 
-        parts = [_format_weather(current_data)]
+        parts = [_format_weather(current_data, place_name)]
         raw_data: dict[str, Any] = {"current": current_data, "source": "openweather"}
 
         if include_forecast:
@@ -296,7 +325,7 @@ class WeatherStubTool(BaseTool):
                 {"lat": latitude, "lon": longitude, "appid": api_key, "units": "metric", "lang": "ru"},
             )
             if forecast_data:
-                parts.append(_format_forecast(forecast_data))
+                parts.append(_format_forecast(forecast_data, place_name))
                 raw_data["forecast"] = forecast_data
             elif forecast_err:
                 parts.append(f"Прогноз недоступен: {forecast_err}")

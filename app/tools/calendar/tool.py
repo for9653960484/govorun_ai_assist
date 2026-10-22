@@ -19,6 +19,10 @@ class CalendarTool(BaseTool):
 
     def __init__(self, service: CalendarService) -> None:
         self._service = service
+        self._user_id = ""
+
+    def bind(self, user_id: str) -> None:
+        self._user_id = user_id
 
     def schema(self) -> dict[str, Any]:
         return {
@@ -49,7 +53,7 @@ class CalendarTool(BaseTool):
     async def run(self, **kwargs: Any) -> ToolResult:
         phrase = str(kwargs.get("text") or "").strip()
         if phrase:
-            answer = self._service.answer_request(phrase, capture=True)
+            answer = self._service.answer_request(self._user_id, phrase, capture=True)
             if answer is None:
                 return ToolResult(ok=False, message=self._service.section_hint())
             return ToolResult(ok=True, message=answer)
@@ -68,11 +72,11 @@ class CalendarTool(BaseTool):
                 month,
                 year,
             )
-            return ToolResult(ok=True, message=self._service.save_birthday(person))
+            return ToolResult(ok=True, message=self._service.save_birthday(self._user_id, person))
 
         if month is None:
             return ToolResult(ok=False, message="Укажите месяц, например: март.")
-        return ToolResult(ok=True, message=self._service.format_month_birthdays(month))
+        return ToolResult(ok=True, message=self._service.format_month_birthdays(self._user_id, month))
 
 
 def _as_int(value: object) -> int | None:

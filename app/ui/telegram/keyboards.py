@@ -1,12 +1,25 @@
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 
 
-def main_keyboard() -> ReplyKeyboardMarkup:
-    """Главная клавиатура Telegram на русском."""
+def main_keyboard(titles: list[str]) -> ReplyKeyboardMarkup:
+    """Главная клавиатура: инструменты, проекты и помощь."""
+    rows: list[list[KeyboardButton]] = []
+    row: list[KeyboardButton] = []
+    for title in titles:
+        row.append(KeyboardButton(text=title))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([KeyboardButton(text="Проекты"), KeyboardButton(text="Помощь")])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def projects_keyboard() -> ReplyKeyboardMarkup:
+    """Возврат из раздела проектов."""
     return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Показать темы"), KeyboardButton(text="Помощь")],
-        ],
+        keyboard=[[KeyboardButton(text="Назад")]],
         resize_keyboard=True,
     )
 
@@ -59,16 +72,3 @@ def schedule_confirm_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def topics_keyboard(titles: list[str]) -> ReplyKeyboardMarkup:
-    """Клавиатура тем: пункты инструментов в порядке регистрации."""
-    rows: list[list[KeyboardButton]] = []
-    row: list[KeyboardButton] = []
-    for title in titles:
-        row.append(KeyboardButton(text=title))
-        if len(row) == 2:
-            rows.append(row)
-            row = []
-    if row:
-        rows.append(row)
-    rows.append([KeyboardButton(text="Назад")])
-    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)

@@ -3,6 +3,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from app.config import settings
+
 
 class LongMemoryStore:
     """Инициализация SQLite-хранилища долгой памяти."""
@@ -21,11 +23,15 @@ class LongMemoryStore:
                 """
                 CREATE TABLE IF NOT EXISTS topics (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT UNIQUE NOT NULL,
-                    tag TEXT UNIQUE NOT NULL
+                    user_id TEXT NOT NULL DEFAULT '',
+                    name TEXT NOT NULL,
+                    tag TEXT NOT NULL,
+                    UNIQUE(user_id, name),
+                    UNIQUE(user_id, tag)
                 )
                 """
             )
+            _own_topics(con)
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS notes (
@@ -49,3 +55,33 @@ class LongMemoryStore:
                 )
                 """
             )
+
+
+def _own_topics(con: sqlite3.Connection) -> None:
+    """Старые общие темы закрепляет за владельцем и даёт каждой теме своего пользователя."""
+    columns = {row[1] for row in con.execute("PRAGMA table_info(topics)")}
+    if not columns:
+        return
+    owner = settings.telegram_allowed_user_id or ""
+    if "user_id" not in columns:
+        con.execute(
+            """
+            CREATE TABLE topics_owned (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                tag TEXT NOT NULL,
+                UNIQUE(user_id, name),
+                UNIQUE(user_id, tag)
+            )
+            """
+        )
+        con.execute(
+            "INSERT INTO topics_owned (id, user_id, name, tag) SELECT id, ?, name, tag FROM topics",
+            (owner,),
+        )
+        con.execute("DROP TABLE topics")
+        con.execute("ALTER TABLE topics_owned RENAME TO topics")
+        return
+    if owner:
+        con.execute("UPDATE topics SET user_id = ? WHERE user_id = ''", (owner,))

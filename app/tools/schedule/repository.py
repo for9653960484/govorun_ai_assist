@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from app.config import settings
 from app.tools.schedule.schemas import CalendarEvent, ScheduleError
 
 
@@ -62,6 +63,22 @@ class ScheduleRepository:
                 )
                 """
             )
+            conn.execute(
+                "ALTER TABLE schedule_events ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT ''"
+            )
+            conn.execute(
+                "ALTER TABLE schedule_reminders ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT ''"
+            )
+            owner = settings.telegram_allowed_user_id
+            if owner:
+                conn.execute(
+                    "UPDATE schedule_events SET user_id = %s WHERE user_id = ''",
+                    (owner,),
+                )
+                conn.execute(
+                    "UPDATE schedule_reminders SET user_id = %s WHERE user_id = ''",
+                    (owner,),
+                )
         self._ready = True
 
     def get_dialog(self, user_id: str) -> tuple[str, dict]:
@@ -98,7 +115,7 @@ class ScheduleRepository:
         with self._connect() as conn:
             conn.execute("DELETE FROM schedule_dialog WHERE user_id = %s", (user_id,))
 
-    def save_window(self, start: datetime, end: datetime, events: list[CalendarEvent]) -> None:
+    def save_window(self, user_id: str, start: datetime, end: datetime, events: list[CalendarEvent]) -> None:
         self.ensure()
         with self._connect() as conn:
             uids = [event.uid for event in events]
@@ -106,69 +123,81 @@ class ScheduleRepository:
                 conn.execute(
                     """
                     DELETE FROM schedule_events
-                    WHERE starts_at < %s AND ends_at > %s AND NOT (uid = ANY(%s))
+                    WHERE user_id = %s AND starts_at < %s AND ends_at > %s AND NOT (uid = ANY(%s))
                     """,
-                    (end, start, uids),
+                    (user_id, end, start, uids),
                 )
             else:
                 conn.execute(
-                    "DELETE FROM schedule_events WHERE starts_at < %s AND ends_at > %s",
-                    (end, start),
+                    "DELETE FROM schedule_events WHERE user_id = %s AND starts_at < %s AND ends_at > %s",
+                    (user_id, end, start),
                 )
             for event in events:
-                _upsert(conn, event)
+                _upsert(conn, user_id, event)
 
-    def save_event(self, event: CalendarEvent) -> None:
+    def save_event(self, user_id: str, event: CalendarEvent) -> None:
         self.ensure()
         with self._connect() as conn:
-            _upsert(conn, event)
+            _upsert(conn, user_id, event)
 
-    def delete_event(self, uid: str) -> None:
+    def delete_event(self, user_id: str, uid: str) -> None:
         self.ensure()
         with self._connect() as conn:
-            conn.execute("DELETE FROM schedule_reminders WHERE event_uid = %s", (uid,))
-            conn.execute("DELETE FROM schedule_events WHERE uid = %s", (uid,))
+            conn.execute(
+                "DELETE FROM schedule_reminders WHERE user_id = %s AND event_uid = %s",
+                (user_id, uid),
+            )
+            conn.execute(
+                "DELETE FROM schedule_events WHERE user_id = %s AND uid = %s",
+                (user_id, uid),
+            )
 
-    def load_window(self, start: datetime, end: datetime) -> list[CalendarEvent]:
+    def load_window(self, user_id: str, start: datetime, end: datetime) -> list[CalendarEvent]:
         self.ensure()
         with self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT uid, href, etag, summary, description, location, starts_at, ends_at, all_day
                 FROM schedule_events
-                WHERE starts_at < %s AND ends_at > %s
+                WHERE user_id = %s AND starts_at < %s AND ends_at > %s
                 ORDER BY starts_at, summary
                 """,
-                (end, start),
+                (user_id, end, start),
             ).fetchall()
         return [_from_row(row) for row in rows]
 
-    def set_reminder(self, event_uid: str, minutes_before: int, remind_at: datetime | None) -> None:
+    def set_reminder(self, user_id: str, event_uid: str, minutes_before: int, remind_at: datetime | None) -> None:
         self.ensure()
         with self._connect() as conn:
             if minutes_before <= 0 or remind_at is None:
-                conn.execute("DELETE FROM schedule_reminders WHERE event_uid = %s", (event_uid,))
+                conn.execute(
+                    "DELETE FROM schedule_reminders WHERE user_id = %s AND event_uid = %s",
+                    (user_id, event_uid),
+                )
                 return
             conn.execute(
                 """
-                INSERT INTO schedule_reminders (event_uid, minutes_before, remind_at, sent_at)
-                VALUES (%s, %s, %s, NULL)
+                INSERT INTO schedule_reminders (event_uid, user_id, minutes_before, remind_at, sent_at)
+                VALUES (%s, %s, %s, %s, NULL)
                 ON CONFLICT (event_uid) DO UPDATE
-                SET minutes_before = EXCLUDED.minutes_before, remind_at = EXCLUDED.remind_at, sent_at = NULL
+                SET user_id = EXCLUDED.user_id,
+                    minutes_before = EXCLUDED.minutes_before,
+                    remind_at = EXCLUDED.remind_at,
+                    sent_at = NULL
                 """,
-                (event_uid, minutes_before, remind_at),
+                (event_uid, user_id, minutes_before, remind_at),
             )
 
-    def shift_reminder(self, event_uid: str, starts_at: datetime) -> None:
+    def shift_reminder(self, user_id: str, event_uid: str, starts_at: datetime) -> None:
         self.ensure()
         with self._connect() as conn:
             conn.execute(
                 """
                 UPDATE schedule_reminders
                 SET remind_at = %s - make_interval(mins => minutes_before), sent_at = NULL
-                WHERE event_uid = %s
+                WHERE user_id = %s AND event_uid = %s
                 """,
-                (starts_at, event_uid),
+                (starts_at, user_id, event_uid),
             )
 
     def due_reminders(self, now: datetime) -> list[dict]:
@@ -176,15 +205,25 @@ class ScheduleRepository:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT r.event_uid, r.remind_at, e.summary, e.location, e.starts_at, e.ends_at
+                SELECT r.user_id, r.event_uid, r.remind_at, e.summary, e.location, e.starts_at, e.ends_at
                 FROM schedule_reminders AS r
-                LEFT JOIN schedule_events AS e ON e.uid = r.event_uid
-                WHERE r.sent_at IS NULL AND r.remind_at <= %s
+                LEFT JOIN schedule_events AS e ON e.uid = r.event_uid AND e.user_id = r.user_id
+                WHERE r.sent_at IS NULL AND r.remind_at <= %s AND r.user_id <> ''
                 ORDER BY r.remind_at
                 """,
                 (now,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def delete_user(self, user_id: str) -> None:
+        if not user_id or not self.database_url:
+            return
+        self.ensure()
+        with self._connect() as conn:
+            conn.execute("DELETE FROM schedule_reminders WHERE user_id = %s", (user_id,))
+            conn.execute("DELETE FROM schedule_events WHERE user_id = %s", (user_id,))
+            conn.execute("DELETE FROM schedule_dialog WHERE user_id = %s", (user_id,))
+            conn.execute("DELETE FROM schedule_settings WHERE user_id = %s", (user_id,))
 
     def mark_reminder_sent(self, event_uid: str, remind_at: datetime) -> None:
         self.ensure()
@@ -211,14 +250,15 @@ class ScheduleRepository:
             raise ScheduleError("Нет соединения с PostgreSQL.") from exc
 
 
-def _upsert(conn, event: CalendarEvent) -> None:
+def _upsert(conn, user_id: str, event: CalendarEvent) -> None:
     conn.execute(
         """
         INSERT INTO schedule_events (
-            uid, href, etag, summary, description, location, starts_at, ends_at, all_day, updated_at
+            uid, user_id, href, etag, summary, description, location, starts_at, ends_at, all_day, updated_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
         ON CONFLICT (uid) DO UPDATE SET
+            user_id = EXCLUDED.user_id,
             href = EXCLUDED.href,
             etag = EXCLUDED.etag,
             summary = EXCLUDED.summary,
@@ -231,6 +271,7 @@ def _upsert(conn, event: CalendarEvent) -> None:
         """,
         (
             event.uid,
+            user_id,
             event.href,
             event.etag,
             event.summary,

@@ -7,7 +7,6 @@ from datetime import datetime
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
-from app.config import settings
 from app.tools.schedule.service import ScheduleService, _format_event
 from app.tools.schedule.schemas import CalendarEvent
 
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 async def run_schedule_reminders(bot: Bot, service: ScheduleService) -> None:
-    """Отправляет владельцу напоминания, время которых уже наступило."""
+    """Отправляет напоминание тому пользователю, которому принадлежит событие."""
     while True:
         try:
             await _send_due(bot, service)
@@ -25,16 +24,16 @@ async def run_schedule_reminders(bot: Bot, service: ScheduleService) -> None:
 
 
 async def _send_due(bot: Bot, service: ScheduleService) -> None:
-    owner = settings.telegram_allowed_user_id
-    if not owner.isdigit():
-        return
     now = datetime.now(service.tz)
     for item in service.due_reminders(now):
+        recipient = str(item.get("user_id") or "")
+        if not recipient.isdigit():
+            continue
         text = _message(item, service)
         try:
-            await bot.send_message(int(owner), text)
+            await bot.send_message(int(recipient), text)
         except (TelegramBadRequest, TelegramForbiddenError):
-            logger.info("Напоминание расписания не доставлено владельцу")
+            logger.info("Напоминание расписания не доставлено")
             continue
         except Exception:
             logger.exception("Ошибка отправки напоминания расписания")

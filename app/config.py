@@ -31,6 +31,7 @@ class Settings:
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_proxy: str = os.getenv("TELEGRAM_PROXY", "")
     telegram_allowed_user_id: str = os.getenv("TELEGRAM_ALLOWED_USER_ID", "").strip()
+    bot_member_usernames: str = os.getenv("BOT_MEMBER_USERNAMES", "").strip()
     schedule_database_url: str = os.getenv("SCHEDULE_DATABASE_URL", "").strip()
     schedule_timezone: str = os.getenv("SCHEDULE_TIMEZONE", "Europe/Moscow").strip() or "Europe/Moscow"
     google_calendar_client_id: str = os.getenv("GOOGLE_CALENDAR_CLIENT_ID", "").strip()

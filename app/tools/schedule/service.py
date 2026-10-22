@@ -127,15 +127,15 @@ class ScheduleService:
         now = datetime.now(self.tz)
         if command == "day":
             start, end = day_bounds(now, self.tz)
-            return ScheduleReply(self._show(start, end, "Сегодня"))
+            return ScheduleReply(self._show(user_id, start, end, "Сегодня"))
         if command == "week":
             start, end = week_bounds(now, self.tz)
             title = f"Неделя {start:%d.%m}–{(end - timedelta(days=1)):%d.%m}"
-            return ScheduleReply(self._show(start, end, title))
+            return ScheduleReply(self._show(user_id, start, end, title))
         if command == "month":
             start, end = month_bounds(now, self.tz)
             title = f"{_MONTHS[start.month - 1]} {start.year}"
-            return ScheduleReply(self._show(start, end, title))
+            return ScheduleReply(self._show(user_id, start, end, title))
         if command == "create":
             self.repo.set_dialog(user_id, "create_title", {})
             return ScheduleReply("Название события:")
@@ -210,8 +210,8 @@ class ScheduleService:
             ends_at=end,
         )
         saved = self._google().create_event(event)
-        self.repo.save_event(saved)
-        self._store_reminder(saved, minutes)
+        self.repo.save_event(user_id, saved)
+        self._store_reminder(user_id, saved, minutes)
         self.repo.clear_dialog(user_id)
         tail = "Напоминание не задано." if minutes == 0 else f"Напоминание: за {minutes} мин."
         return ScheduleReply(f"Событие записано в Google Календарь.\n{_format_event(saved, self.tz)}\n{tail}")
@@ -219,7 +219,7 @@ class ScheduleService:
     def _ask_pick(self, user_id: str, action: str) -> ScheduleReply:
         now = datetime.now(self.tz)
         start, _day_end = day_bounds(now, self.tz)
-        events, cached = self._events_between(start, start + timedelta(days=14))
+        events, cached = self._events_between(user_id, start, start + timedelta(days=14))
         if not events:
             return ScheduleReply("На ближайшие две недели событий нет.")
         items = [_dump(event) for event in events]
@@ -264,7 +264,7 @@ class ScheduleService:
         else:
             return ScheduleReply("Выберите: название, описание, место или длительность.", "fields")
         saved = self._google().update_event(event)
-        self.repo.save_event(saved)
+        self.repo.save_event(user_id, saved)
         self.repo.clear_dialog(user_id)
         return ScheduleReply(f"Событие изменено.\n{_format_event(saved, self.tz)}")
 
@@ -277,8 +277,8 @@ class ScheduleService:
         event.starts_at = start
         event.ends_at = start + duration
         saved = self._google().update_event(event)
-        self.repo.save_event(saved)
-        self.repo.shift_reminder(saved.uid, saved.starts_at)
+        self.repo.save_event(user_id, saved)
+        self.repo.shift_reminder(user_id, saved.uid, saved.starts_at)
         self.repo.clear_dialog(user_id)
         return ScheduleReply(f"Событие перенесено.\n{_format_event(saved, self.tz)}")
 
@@ -291,7 +291,7 @@ class ScheduleService:
             return ScheduleReply("Напишите «да» или «нет».", "confirm")
         event = _load(payload["item"])
         self._google().delete_event(event)
-        self.repo.delete_event(event.uid)
+        self.repo.delete_event(user_id, event.uid)
         self.repo.clear_dialog(user_id)
         return ScheduleReply(f"Событие удалено.\n{_format_event(event, self.tz)}")
 
@@ -300,14 +300,14 @@ class ScheduleService:
         if minutes is None:
             return ScheduleReply("Напишите число минут, например 30, или 0.")
         event = _load(payload["item"])
-        self._store_reminder(event, minutes)
+        self._store_reminder(user_id, event, minutes)
         self.repo.clear_dialog(user_id)
         if minutes == 0:
             return ScheduleReply(f"Напоминание снято.\n{_format_event(event, self.tz)}")
         return ScheduleReply(f"Напоминание: за {minutes} мин.\n{_format_event(event, self.tz)}")
 
-    def _show(self, start: datetime, end: datetime, title: str) -> str:
-        events, cached = self._events_between(start, end)
+    def _show(self, user_id: str, start: datetime, end: datetime, title: str) -> str:
+        events, cached = self._events_between(user_id, start, end)
         if not events:
             return f"{title}\nСобытий нет."
         lines = [title]
@@ -322,25 +322,25 @@ class ScheduleService:
             lines.append("Показан локальный кэш: Google Календарь сейчас недоступен.")
         return "\n".join(lines)
 
-    def _events_between(self, start: datetime, end: datetime) -> tuple[list[CalendarEvent], bool]:
+    def _events_between(self, user_id: str, start: datetime, end: datetime) -> tuple[list[CalendarEvent], bool]:
         try:
             events = self._google().list_events(start, end)
-            self.repo.save_window(start, end, events)
+            self.repo.save_window(user_id, start, end, events)
             return events, False
         except ScheduleError as exc:
-            cached = self.repo.load_window(start, end)
+            cached = self.repo.load_window(user_id, start, end)
             if cached:
                 return cached, True
             raise exc
 
-    def _store_reminder(self, event: CalendarEvent, minutes: int) -> None:
+    def _store_reminder(self, user_id: str, event: CalendarEvent, minutes: int) -> None:
         if minutes <= 0:
-            self.repo.set_reminder(event.uid, 0, None)
+            self.repo.set_reminder(user_id, event.uid, 0, None)
             return
         remind_at = event.starts_at - timedelta(minutes=minutes)
         if remind_at <= datetime.now(event.starts_at.tzinfo):
             raise ScheduleError("Время напоминания уже прошло.")
-        self.repo.set_reminder(event.uid, minutes, remind_at)
+        self.repo.set_reminder(user_id, event.uid, minutes, remind_at)
 
     def _google(self) -> GoogleCalendar:
         return GoogleCalendar(settings.google_calendar_id)

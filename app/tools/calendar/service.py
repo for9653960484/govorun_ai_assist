@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from datetime import date
 
+from app.config import settings
 from app.tools.calendar.repository import CalendarRepository
 from app.tools.calendar.schemas import PersonBirthday
 from app.tools.schedule.birthdays import publish_birthday, withdraw_birthday
@@ -93,22 +94,22 @@ class CalendarService:
     def __init__(self, repo: CalendarRepository) -> None:
         self.repo = repo
 
-    def add_birthday(self, person: PersonBirthday) -> int:
-        return self.repo.add_person(person)
+    def add_birthday(self, user_id: str, person: PersonBirthday) -> int:
+        return self.repo.add_person(user_id, person)
 
-    def list_month_birthdays(self, month: int) -> list[dict]:
-        return self.repo.by_month(month)
+    def list_month_birthdays(self, user_id: str, month: int) -> list[dict]:
+        return self.repo.by_month(user_id, month)
 
-    def search_fio(self, query: str) -> list[dict]:
-        return self.repo.find_by_fio(query)
+    def search_fio(self, user_id: str, query: str) -> list[dict]:
+        return self.repo.find_by_fio(user_id, query)
 
-    def format_month_birthdays(self, month: int) -> str:
+    def format_month_birthdays(self, user_id: str, month: int) -> str:
         """Строки «ДД.ММ - фамилия имя» по возрастанию дня."""
-        return _format_rows(self.list_month_birthdays(month), _EMPTY_MONTH)
+        return _format_rows(self.list_month_birthdays(user_id, month), _EMPTY_MONTH)
 
-    def format_year_birthdays(self) -> str:
+    def format_year_birthdays(self, user_id: str) -> str:
         """Все дни рождения за год, по возрастанию даты."""
-        return _format_rows(self.repo.all_people(), _EMPTY_YEAR)
+        return _format_rows(self.repo.all_people(user_id), _EMPTY_YEAR)
 
     def section_text(self) -> str:
         return self.section_hint()
@@ -116,8 +117,10 @@ class CalendarService:
     def section_hint(self) -> str:
         return _ENTRY_HINT
 
-    def _with_google(self, text: str, person_id: int) -> str:
-        row = self.repo.get_person(person_id)
+    def _with_google(self, user_id: str, text: str, person_id: int) -> str:
+        if user_id != settings.telegram_allowed_user_id:
+            return text
+        row = self.repo.get_person(user_id, person_id)
         already = bool(row and str(row.get("google_event_id") or "").strip())
         error = publish_birthday(self.repo, person_id)
         if error:
@@ -126,7 +129,7 @@ class CalendarService:
             return text
         return f"{text}\n\nВ Google Календаре это событие на весь день, уведомление за 1 день."
 
-    def save_birthday(self, person: PersonBirthday) -> str:
+    def save_birthday(self, user_id: str, person: PersonBirthday) -> str:
         """Пишет день рождения в SQLite и возвращает список этого месяца."""
         person = PersonBirthday(
             _name_part(person.last_name),
@@ -138,16 +141,16 @@ class CalendarService:
         )
         if not person.last_name or not person.first_name or not _valid_date(person.day, person.month, person.year):
             return self.section_hint()
-        for row in self.repo.by_month(person.month):
+        for row in self.repo.by_month(user_id, person.month):
             same_day = int(row["birth_day"]) == person.day
             same_last = str(row["last_name"]).casefold() == person.last_name.casefold()
             same_first = str(row["first_name"]).casefold() == person.first_name.casefold()
             if same_day and same_last and same_first:
-                return self._with_google(self.format_month_birthdays(person.month), int(row["id"]))
-        person_id = self.repo.add_person(person)
-        return self._with_google(self.format_month_birthdays(person.month), person_id)
+                return self._with_google(user_id, self.format_month_birthdays(user_id, person.month), int(row["id"]))
+        person_id = self.repo.add_person(user_id, person)
+        return self._with_google(user_id, self.format_month_birthdays(user_id, person.month), person_id)
 
-    def delete_by_name(self, query: str) -> str | None:
+    def delete_by_name(self, user_id: str, query: str) -> str | None:
         """Удаляет одну запись по имени. None — никого не нашли."""
         found_date = _find_date(query)
         name_text = query
@@ -157,7 +160,7 @@ class CalendarService:
         needle = " ".join(name_text.replace("ё", "е").split()).casefold()
         if not needle:
             return "Укажите имя: удали Иванов"
-        found = [row for row in self.repo.all_people() if _row_matches(row, needle)]
+        found = [row for row in self.repo.all_people(user_id) if _row_matches(row, needle)]
         if found_date is not None:
             day, month = found_date[0], found_date[1]
             found = [
@@ -178,13 +181,14 @@ class CalendarService:
             return _format_rows(found, "") + f"\n{hint}"
         row = found[0]
         event_id = str(row.get("google_event_id") or "").strip()
-        error = withdraw_birthday(event_id)
-        if error:
-            return f"Событие в Google Календаре не удалено: {error}"
-        self.repo.delete_person(int(row["id"]))
+        if user_id == settings.telegram_allowed_user_id and event_id:
+            error = withdraw_birthday(event_id)
+            if error:
+                return f"Событие в Google Календаре не удалено: {error}"
+        self.repo.delete_person(user_id, int(row["id"]))
         return f"Удалено: {_format_line(row)}"
 
-    def answer_request(self, text: str, *, capture: bool = False) -> str | None:
+    def answer_request(self, user_id: str, text: str, *, capture: bool = False) -> str | None:
         """Команды запиши, выведи и удали. Иначе None."""
         raw = " ".join((text or "").split())
         if not raw:
@@ -198,30 +202,30 @@ class CalendarService:
             person = parse_birthday(rest)
             if person is None:
                 return "Нужны дата и ФИО: запиши 12 октября Иванов Иван"
-            return self.save_birthday(person)
+            return self.save_birthday(user_id, person)
         if verb.startswith("выв"):
-            return self._show(rest)
-        removed = self.delete_by_name(rest)
+            return self._show(user_id, rest)
+        removed = self.delete_by_name(user_id, rest)
         if removed is None:
             if capture:
                 return "Запись не найдена."
             return None
         return removed
 
-    def _show(self, rest: str) -> str:
+    def _show(self, user_id: str, rest: str) -> str:
         folded = " ".join(rest.replace("ё", "е").split()).casefold()
         if not folded:
             return "Укажите месяц или год: выведи октябрь"
         if _YEAR_QUERY.fullmatch(folded):
-            return self.format_year_birthdays()
+            return self.format_year_birthdays(user_id)
         month = parse_month(rest)
         if month is not None and not _name_leftover(rest):
-            return self.format_month_birthdays(month)
+            return self.format_month_birthdays(user_id, month)
         return "Укажите месяц или год: выведи октябрь"
 
-    def answer_month_request(self, text: str) -> str | None:
+    def answer_month_request(self, user_id: str, text: str) -> str | None:
         """Ответ на запрос дней рождения за месяц, если месяц в тексте указан."""
-        return self.answer_request(text, capture=False)
+        return self.answer_request(user_id, text, capture=False)
 
 
 def parse_month(value: object) -> int | None:

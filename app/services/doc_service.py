@@ -46,3 +46,6 @@ class DocumentService:
 
     def get_last_index_path(self, user_id: str) -> Path | None:
         return self._last_index_by_user.get(user_id)
+
+    def drop_user(self, user_id: str) -> None:
+        self._last_index_by_user.pop(user_id, None)

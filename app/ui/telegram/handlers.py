@@ -1,26 +1,31 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from aiogram import Router
 from aiogram.filters import CommandStart
-from aiogram.types import Message
+from aiogram.types import FSInputFile, Message, ReplyKeyboardRemove
 
+from app.access.repository import AccessRegistry
+from app.access.service import AccessService
 from app.config import settings
 from app.core.agent import Agent
 from app.core.types import IncomingMessage
 from app.tools.quotes_tool import accepts_query, asset_by_label
 from app.ui.telegram.keyboards import (
     main_keyboard,
+    projects_keyboard,
     quotes_keyboard,
     schedule_confirm_keyboard,
     schedule_fields_keyboard,
     schedule_keyboard,
-    topics_keyboard,
 )
 
 router = Router()
 TELEGRAM_MESSAGE_LIMIT = 4096
+_REMOVE_USER = re.compile(r"^удалить\s+пользователя\s+@?(\S+)$", re.IGNORECASE)
+_ADD_USER = re.compile(r"^добавить\s+пользователя\s+@?(\S+)$", re.IGNORECASE)
 
 
 def _schedule_markup(name: str):
@@ -59,25 +64,116 @@ async def _answer_safe(message: Message, text: str, **kwargs: object) -> None:
             await message.answer(part, **follow)
 
 
+_DENIED_TEXT = "Нет доступа к боту."
+
+
+def _main_menu(agent: Agent):
+    titles = [title for title, _hint in agent.registry.menu_entries()]
+    return main_keyboard(titles)
+
+
+def _close_sections(agent: Agent, user_id: str) -> None:
+    agent.disarm_quotes(user_id)
+    agent.disarm_habits(user_id)
+    agent.disarm_calendar(user_id)
+    agent.disarm_schedule(user_id)
+
+
+async def _handle_access(message: Message, agent: Agent, user_id: str, text: str) -> bool:
+    """Удаление пользователя и своя отвязка. True — сообщение уже обработано."""
+    service = AccessService(agent.access_pending)
+    if service.has_pending(user_id):
+        answer, removed_id, left = service.take_answer(user_id, text) or ("", "", False)
+        if removed_id:
+            agent.release_user(removed_id)
+        if left:
+            await _answer_safe(message, answer, reply_markup=ReplyKeyboardRemove())
+        elif answer.startswith("Удалить"):
+            await _answer_safe(message, answer, reply_markup=schedule_confirm_keyboard())
+        else:
+            await _answer_safe(message, answer, reply_markup=_main_menu(agent))
+        return True
+
+    folded = " ".join(text.replace("ё", "е").split()).casefold()
+    if folded == "пользователи":
+        await _answer_safe(message, service.list_text(user_id), reply_markup=_main_menu(agent))
+        return True
+    if folded == "отвязаться":
+        _close_sections(agent, user_id)
+        answer = service.ask_leave(user_id)
+        markup = schedule_confirm_keyboard() if service.has_pending(user_id) else _main_menu(agent)
+        await _answer_safe(message, answer, reply_markup=markup)
+        return True
+    remove_match = _REMOVE_USER.fullmatch(text.strip())
+    if remove_match:
+        _close_sections(agent, user_id)
+        answer = service.ask_remove(user_id, remove_match.group(1))
+        markup = schedule_confirm_keyboard() if service.has_pending(user_id) else _main_menu(agent)
+        await _answer_safe(message, answer, reply_markup=markup)
+        return True
+    add_match = _ADD_USER.fullmatch(text.strip())
+    if add_match:
+        await _answer_safe(message, service.add_text(user_id, add_match.group(1)), reply_markup=_main_menu(agent))
+        return True
+    return False
+
+
+async def _admit(message: Message) -> str:
+    """«yes» — уже впущен, «new» — привязка только что создана, пусто — отказано."""
+    user = message.from_user
+    if user is None:
+        return ""
+    user_id = str(user.id)
+    access = AccessRegistry(settings.sqlite_path)
+    if access.is_allowed(user_id):
+        return "yes"
+    bound = access.bind(user_id, user.username or "")
+    if bound:
+        return bound
+    await _answer_safe(message, _DENIED_TEXT, reply_markup=ReplyKeyboardRemove())
+    return ""
+
+
 def setup_handlers(agent: Agent) -> Router:
     @router.message(CommandStart())
     async def cmd_start(message: Message) -> None:
-        await _answer_safe(message, agent.topics_text(), reply_markup=main_keyboard())
+        if not await _admit(message):
+            return
+        await _answer_safe(message, "Главное меню.", reply_markup=_main_menu(agent))
 
     @router.message()
     async def any_message(message: Message) -> None:
+        admission = await _admit(message)
+        if not admission:
+            return
         # For documents Telegram puts user text into caption, not text.
         text = (message.text or message.caption or "").strip()
 
         user_id = str(message.from_user.id) if message.from_user else ""
 
-        if text == "Показать темы":
+        if admission == "new":
+            await _answer_safe(message, "Главное меню.", reply_markup=_main_menu(agent))
+            return
+
+        if await _handle_access(message, agent, user_id, text):
+            return
+
+        if text == "Помощь":
             agent.disarm_quotes(user_id)
             agent.disarm_habits(user_id)
             agent.disarm_calendar(user_id)
             agent.disarm_schedule(user_id)
-            titles = [title for title, _hint in agent.registry.menu_entries()]
-            await _answer_safe(message, agent.topics_text(), reply_markup=topics_keyboard(titles))
+            agent.travel_service.cancel(user_id)
+            await _answer_safe(message, agent.help_text(user_id), reply_markup=_main_menu(agent))
+            return
+
+        if text == "Проекты":
+            agent.disarm_quotes(user_id)
+            agent.disarm_habits(user_id)
+            agent.disarm_calendar(user_id)
+            agent.disarm_schedule(user_id)
+            agent.travel_service.cancel(user_id)
+            await _answer_safe(message, agent.projects_text(user_id), reply_markup=projects_keyboard())
             return
 
         if text == "Назад":
@@ -86,7 +182,7 @@ def setup_handlers(agent: Agent) -> Router:
             agent.disarm_calendar(user_id)
             agent.disarm_schedule(user_id)
             agent.travel_service.cancel(user_id)
-            await _answer_safe(message, "Главное меню.", reply_markup=main_keyboard())
+            await _answer_safe(message, "Главное меню.", reply_markup=_main_menu(agent))
             return
 
         if text == agent.quotes_tool.menu_title:
@@ -164,7 +260,7 @@ def setup_handlers(agent: Agent) -> Router:
             return
 
         if user_id and agent.calendar_waiting(user_id):
-            birthday = agent.calendar_service.answer_request(text, capture=True)
+            birthday = agent.calendar_service.answer_request(user_id, text, capture=True)
             if birthday is None:
                 birthday = agent.calendar_service.section_hint()
             await _answer_safe(message, birthday)
@@ -187,10 +283,31 @@ def setup_handlers(agent: Agent) -> Router:
             await _answer_safe(message, travel_answer)
             return
 
+        file_match = re.fullmatch(r"(?:файл|сохранить)\s+#?([^\s#]+)", text, flags=re.IGNORECASE)
+        if file_match:
+            prepared = agent.project_file(user_id, file_match.group(1))
+            if isinstance(prepared, str):
+                await _answer_safe(message, prepared, reply_markup=projects_keyboard())
+                return
+            shown = agent.tag_service.normalize_tag(file_match.group(1))
+            await message.answer_document(
+                FSInputFile(prepared, filename=f"{shown}.txt"),
+                caption=f"Обсуждение #{shown}. Файл можно сохранить, переслать или отправить почтой.",
+                reply_markup=projects_keyboard(),
+            )
+            return
+
+        create_match = re.fullmatch(r"(?:добавить|создать)\s+проект\s+(.+)", text, flags=re.IGNORECASE)
+        if create_match:
+            ok, info = agent.create_project(user_id, create_match.group(1))
+            answer = f"{info}\n\n{agent.projects_text(user_id)}" if ok else info
+            await _answer_safe(message, answer, reply_markup=projects_keyboard())
+            return
+
         delete_match = re.fullmatch(r"удалить\s+#?([^\s#]+)", text, flags=re.IGNORECASE)
         if delete_match:
-            ok, info = agent.delete_topic_by_tag(delete_match.group(1))
-            answer = info if ok else f"{info}\n\n{agent.topics_text()}"
+            ok, info = agent.delete_topic_by_tag(user_id, delete_match.group(1))
+            answer = info if ok else f"{info}\n\n{agent.projects_text(user_id)}"
             await _answer_safe(message, answer)
             return
 
@@ -200,8 +317,8 @@ def setup_handlers(agent: Agent) -> Router:
             flags=re.IGNORECASE,
         )
         if rename_match:
-            ok, info = agent.rename_topic_tag(rename_match.group(1), rename_match.group(2))
-            answer = info if ok else f"{info}\n\n{agent.topics_text()}"
+            ok, info = agent.rename_topic_tag(user_id, rename_match.group(1), rename_match.group(2))
+            answer = info if ok else f"{info}\n\n{agent.projects_text(user_id)}"
             await _answer_safe(message, answer)
             return
 
@@ -210,7 +327,7 @@ def setup_handlers(agent: Agent) -> Router:
         if message.document:
             file_name = message.document.file_name
             if file_name:
-                dst = settings.documents_raw_dir / file_name
+                dst = settings.documents_raw_dir / user_id / Path(file_name).name
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 file_obj = await message.bot.get_file(message.document.file_id)
                 await message.bot.download(file_obj, destination=dst)
