@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// SQLite не хранит массивы строк. interests и achievements лежат как JSON-текст,
+// а API отдаёт их массивами string[].
+
+enum ContactStatus {
+  NEW
+  RESEARCHED
+  DRAFT_READY
+  SENT
+  REPLIED
+  FOLLOW_UP_NEEDED
+  CLOSED
+}
+
+enum MessageTone {
+  PROFESSIONAL
+  FRIENDLY
+  DIRECT
+  EXECUTIVE
+}
+
+model Contact {
+  id              String         @id @default(cuid())
+  fullName        String
+  linkedinId      String         @unique
+  linkedinUrl     String?
+  headline        String?
+  occupation      String
+  company         String?
+  industry        String?
+  location        String?
+  interests       String         @default("[]")
+  notes           String?
+  status          ContactStatus  @default(NEW)
+  lastContactedAt DateTime?
+  searchText      String         @default("")
+  companyKey      String         @default("")
+  industryKey     String         @default("")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  drafts          MessageDraft[]
+
+  @@index([status])
+  @@index([updatedAt])
+  @@index([companyKey])
+  @@index([industryKey])
+}
+
+model MessageDraft {
+  id                   String      @id @default(cuid())
+  contactId            String
+  contact              Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  goal                 String
+  tone                 MessageTone
+  language             String      @default("ru")
+  generatedText        String
+  personalizationHooks String      @default("[]")
+  risks                String      @default("[]")
+  suggestedFollowUp    String      @default("")
+  version              Int
+  isApproved           Boolean     @default(false)
+  userFeedback         String?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  @@index([contactId])
+}
+
+model UserProfile {
+  id                String   @id @default(cuid())
+  name              String
+  currentRole       String
+  company           String?
+  keyExperience     String
+  achievements      String   @default("[]")
+  valueProposition  String
+  preferredNextStep String
+  linkedinUrl       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}

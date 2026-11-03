@@ -1,0 +1,35 @@
+{
+  "name": "linkedin-outreach-assistant",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/load-root-env.cjs next dev",
+    "build": "node scripts/load-root-env.cjs next build",
+    "start": "node scripts/load-root-env.cjs next start",
+    "db:seed": "node scripts/load-root-env.cjs tsx prisma/seed.ts",
+    "db:migrate": "node scripts/load-root-env.cjs prisma migrate dev",
+    "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "node scripts/load-root-env.cjs tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.16.2",
+    "next": "^15.5.4",
+    "openai": "^4.104.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "prisma": "^6.16.2",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}
