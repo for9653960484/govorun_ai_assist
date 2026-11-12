@@ -84,8 +84,7 @@ export default function ProfilePage() {
       <div>
         <h1 className="text-2xl font-semibold">Мой профиль</h1>
         <p className="mt-1 max-w-3xl text-sm text-stone-600">
-          Эти сведения попадают в черновик как факты о вас. Профиль LinkedIn задаётся в корневом .env и сюда не
-          подставляется из сайта LinkedIn.
+          Эти сведения попадают в черновик как факты о вас. Текст «Чем можете быть полезны» переносится без изменений, остальное модель формулирует связной речью. Профиль LinkedIn задаётся в корневом .env и сюда не подставляется из сайта LinkedIn.
         </p>
         {form.linkedinUrl ? (
           <a className="mt-2 inline-block text-sm underline" href={form.linkedinUrl} target="_blank" rel="noreferrer">

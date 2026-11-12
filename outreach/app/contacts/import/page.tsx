@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 const SAMPLE = `fullName,linkedinId,linkedinUrl,headline,occupation,company,industry,location,interests,notes
-"Ольга Виноградова",demo-olga-vinogradova,https://www.linkedin.com/in/demo-olga-vinogradova,"Руководитель клиентского сервиса","Клиентский сервис","Ясная","Услуги","Москва","удержание клиентов | скорость ответа","Познакомились на отраслевом завтраке"
+"Ольга Виноградова",olga-vinogradova,https://www.linkedin.com/in/olga-vinogradova,"Руководитель клиентского сервиса","Клиентский сервис","Ясная","Услуги","Москва","удержание клиентов | скорость ответа","Познакомились на отраслевом завтраке"
 `;
 
 export default function ImportPage() {

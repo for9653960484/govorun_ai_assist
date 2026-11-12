@@ -21,7 +21,6 @@ export type OwnerState = {
 export async function ensureWorkspace(): Promise<OwnerState> {
   loadRootEnv();
   const account = linkedInAccountFromEnv();
-  await prisma.contact.deleteMany({ where: { linkedinId: { startsWith: "demo-" } } });
   if (!account) {
     return { name: "", linkedinUrl: "", connectionsFile: "", connectionsFound: false, importResult: null };
   }

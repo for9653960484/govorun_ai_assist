@@ -266,7 +266,7 @@ export function ContactScreen({ id }: { id: string }) {
             <h2 className="text-lg font-semibold">Сгенерировать обращение</h2>
             <p className="mt-1 text-sm text-stone-600">
               Модель видит только карточку, заметки и ваш профиль. Факты она не достраивает, а сообщение никуда не
-              отправляется.
+              отправляется. Текст «Чем можете быть полезны» попадает в письмо без изменений.
             </p>
           </div>
           <Link className="text-sm underline" href="/profile">

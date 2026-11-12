@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { nodeFetch } from "@/lib/nodeFetch";
 import { z } from "zod";
 import type { MessageTone } from "@/lib/labels";
 import { TONE_LABELS } from "@/lib/labels";
@@ -7,7 +8,9 @@ export const SYSTEM_PROMPT = `Ты — эксперт по персональн�
 
 Используй только предоставленные факты. Не придумывай сведения о человеке, его компании, проектах, проблемах или результатах. Если данных недостаточно, используй нейтральную формулировку и укажи это в risks.
 
-Сообщение должно быть персональным, уважительным, конкретным и полезным. Не используй давление, манипуляции, преувеличения и шаблонные фразы. Не более 700 символов. Верни только валидный JSON.`;
+Сообщение должно быть персональным, уважительным, конкретным и полезным. Пиши связной речью, не телеграфом и не списком. Не используй давление, манипуляции, преувеличения и шаблонные фразы. Не более 700 символов.
+
+Текст из поля «Чем можете быть полезны» вставь в сообщение цельным фрагментом и не меняй в нём ни слова. Остальные сведения профиля можно вплести своими словами. Верни только валидный JSON.`;
 
 const resultSchema = z.object({
   message: z.string().trim().min(1),
@@ -57,27 +60,23 @@ export async function generateOutreach(facts: OutreachFacts): Promise<OutreachRe
   if (!apiKey) {
     throw new Error("Не задан OPENAI_API_KEY. Добавьте ключ в корневой .env и перезапустите приложение.");
   }
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({
+    apiKey,
+    timeout: 60_000,
+    maxRetries: 0,
+    fetch: nodeFetch,
+  });
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
   let correction = "";
   let lastParsed: OutreachResult | null = null;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let content = "";
-    try {
-      const completion = await client.chat.completions.create({
-        model,
-        temperature: 0.7,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: buildUserPrompt(facts, correction) },
-        ],
-      });
-      content = completion.choices[0]?.message?.content ?? "";
-    } catch {
-      throw new Error("Сервис генерации не ответил. Проверьте OPENAI_API_KEY и повторите.");
-    }
+    const completion = await createCompletion(client, model, [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: buildUserPrompt(facts, correction) },
+    ]);
+    content = completion.choices[0]?.message?.content ?? "";
     if (!content) {
       correction = "Пустой ответ. Верни только JSON.";
       continue;
@@ -88,19 +87,59 @@ export async function generateOutreach(facts: OutreachFacts): Promise<OutreachRe
       correction = "Нужен валидный JSON с ключами message, personalizationHooks, risks, suggestedFollowUp.";
       continue;
     }
-    const issues = qualityIssues(lastParsed.message);
+    const issues = qualityIssues(lastParsed.message, facts);
     if (issues.length === 0) return withGuaranteeRisk(lastParsed);
-    correction = issues.join(" ");
+    correction = issues.map((issue) => issue.instruction).join(" ");
   }
 
   if (!lastParsed) {
     throw new Error("Не удалось получить черновик. Попробуйте ещё раз.");
   }
-  const issues = qualityIssues(lastParsed.message);
+  const issues = qualityIssues(lastParsed.message, facts);
   return withGuaranteeRisk({
     ...lastParsed,
-    risks: unique([...lastParsed.risks, ...issues.map((issue) => `Проверьте текст перед отправкой: ${issue}`)]),
+    risks: unique([...lastParsed.risks, ...issues.map((issue) => issue.risk)]),
   });
+}
+
+async function createCompletion(
+  client: OpenAI,
+  model: string,
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+) {
+  let lastError: unknown;
+  for (let tryIndex = 0; tryIndex < 3; tryIndex += 1) {
+    try {
+      return await client.chat.completions.create({
+        model,
+        response_format: { type: "json_object" },
+        messages,
+      });
+    } catch (error) {
+      lastError = error;
+      if (!isTransient(error) || tryIndex === 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 500 * (tryIndex + 1)));
+    }
+  }
+  if (isClientError(lastError)) {
+    throw new Error("Модель отклонила запрос. Проверьте OPENAI_MODEL и повторите.");
+  }
+  throw new Error("Сервис генерации не ответил. Проверьте соединение и повторите.");
+}
+
+function isClientError(error: unknown): boolean {
+  const status = errorStatus(error);
+  return status >= 400 && status < 500 && status !== 408 && status !== 429;
+}
+
+function isTransient(error: unknown): boolean {
+  return !isClientError(error);
+}
+
+function errorStatus(error: unknown): number {
+  if (!error || typeof error !== "object" || !("status" in error)) return 0;
+  const status = Number(error.status);
+  return Number.isFinite(status) ? status : 0;
 }
 
 function buildUserPrompt(facts: OutreachFacts, correction: string): string {
@@ -118,7 +157,7 @@ function buildUserPrompt(facts: OutreachFacts, correction: string): string {
     `- Компания: ${facts.profile.company || "не указана"}`,
     `- Опыт: ${facts.profile.keyExperience}`,
     `- Достижения: ${facts.profile.achievements.length ? facts.profile.achievements.join("; ") : "не указаны"}`,
-    `- Польза: ${facts.profile.valueProposition}`,
+    `- Польза, вставить без изменений: ${facts.profile.valueProposition}`,
     "",
     "Контакт:",
     `- Имя: ${facts.contact.fullName}`,
@@ -135,9 +174,10 @@ function buildUserPrompt(facts: OutreachFacts, correction: string): string {
     "- 350–700 символов;",
     "- конкретный первый повод, без шаблона;",
     "- опора на роль, отрасль, компанию или вероятную задачу контакта;",
-    "- короткая связь с опытом отправителя;",
-    "- одна гипотеза пользы, без гарантии результата;",
-    "- спокойный призыв: короткий созвон или вопрос;",
+    "- короткая связь с опытом отправителя, своими словами;",
+    "- текст пользы вставь целиком и без изменений, как в профиле;",
+    "- вокруг этой цитаты — связные предложения, не телеграф;",
+    "- спокойный призыв к следующему шагу, без гарантии результата;",
     "- звучит как личное сообщение одному человеку.",
     "Запрещённые формулировки: «надеюсь, у вас всё хорошо», «пишу вам, потому что», «хотел бы познакомиться».",
     "personalizationHooks — какие данные из фактов реально использованы.",
@@ -149,15 +189,54 @@ function buildUserPrompt(facts: OutreachFacts, correction: string): string {
   return lines.filter((line) => line !== "").join("\n");
 }
 
-function qualityIssues(message: string): string[] {
-  const issues: string[] = [];
+type QualityIssue = { instruction: string; risk: string };
+
+const PLACEHOLDERS = [
+  "укажите текущую роль",
+  "опишите опыт, который можно упоминать в обращении",
+  "опишите, чем вы можете быть полезны контакту",
+].map(plain);
+
+function qualityIssues(message: string, facts: OutreachFacts): QualityIssue[] {
+  const issues: QualityIssue[] = [];
   const length = message.length;
-  if (length < 350) issues.push(`сообщение короткое (${length} символов), нужно 350–700`);
-  if (length > 700) issues.push(`сообщение длинное (${length} символов), нужно 350–700`);
+  if (length < 350) {
+    issues.push({
+      instruction: `сообщение короткое (${length} символов), нужно 350–700`,
+      risk: `Проверьте текст перед отправкой: сообщение короткое (${length} символов), нужно 350–700.`,
+    });
+  }
+  if (length > 700) {
+    issues.push({
+      instruction: `сообщение длинное (${length} символов), нужно 350–700. Сократи связный текст вокруг пользы, саму пользу не меняй`,
+      risk: `Проверьте текст перед отправкой: сообщение длинное (${length} символов), нужно 350–700.`,
+    });
+  }
   const lowered = message.toLocaleLowerCase("ru");
   const found = CLICHES.find((phrase) => lowered.includes(phrase));
-  if (found) issues.push(`убери клише «${found}»`);
+  if (found) {
+    issues.push({
+      instruction: `убери клише «${found}»`,
+      risk: `Проверьте текст перед отправкой: уберите клише «${found}».`,
+    });
+  }
+  const benefit = facts.profile.valueProposition.trim();
+  if (benefit.length >= 12 && !PLACEHOLDERS.includes(plain(benefit)) && !plain(message).includes(plain(benefit))) {
+    issues.push({
+      instruction: `вставь текст «Чем можете быть полезны» целиком и без изменений, остальное оставь связной речью: ${benefit}`,
+      risk: "Текст «Чем можете быть полезны» изменён. Сверьте его с профилем.",
+    });
+  }
   return issues;
+}
+
+function plain(value: string): string {
+  return value
+    .toLocaleLowerCase("ru")
+    .replaceAll("ё", "е")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function withGuaranteeRisk(result: OutreachResult): OutreachResult {
